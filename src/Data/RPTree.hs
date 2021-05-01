@@ -55,21 +55,21 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (Gen, evalGen, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, InnerS(..), innerSD, innerSS, SVector(..), fromList, metricL2)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, InnerS(..), innerSD, innerSS, SVector(..), fromList)
 
 import Data.RPTree.Draw (draw)
 
 -- ^ recall-at-k
-recall :: (Ord d, VU.Unbox d, Floating d, Fractional a) =>
+recall :: (InnerS v, Ord d, VU.Unbox d, Floating d, Fractional a) =>
           RPTree d [SVector d]
-       -> Int -- ^ number of nearest neighbors to consider
-       -> SVector d -- ^ query
+       -> Int -- ^ k : number of nearest neighbors to consider
+       -> v d -- ^ query point
        -> a
 recall = recallWith metricL2
 
-recallWith :: (Fractional a, InnerS v, VU.Unbox d, Ord d, Ord a3, Ord xx, Num d) =>
-              (xx -> v d -> a3)
-           -> RPTree d [xx] -> Int -> v d -> a
+recallWith :: (Fractional a1, InnerS v, Ord d, VU.Unbox d, Num d,
+                Ord a3, Ord a2) =>
+              (a2 -> v d -> a3) -> RPTree d [a2] -> Int -> v d -> a1
 recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
   where
     xs = points tt

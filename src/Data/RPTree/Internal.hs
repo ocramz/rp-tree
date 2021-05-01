@@ -18,7 +18,7 @@ import GHC.Generics (Generic)
 import Control.DeepSeq (NFData(..))
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldr, unfoldrM, length, replicateM)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM)
 import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
@@ -55,10 +55,15 @@ points (RPTree _ t) = fold t
 -- | Inner product with a sparse vector
 class InnerS v where
   innerS :: (VU.Unbox a, Num a) => SVector a -> v a -> a
+  metricL2 :: (VU.Unbox a, Floating a) => SVector a -> v a -> a
 instance InnerS SVector where
   innerS sv1 (SV _ sv2) = innerSS sv1 sv2
+  metricL2 v1 (SV _ v2) = metricSSL2 v1 v2
 instance InnerS VU.Vector where
   innerS = innerSD
+  metricL2 = metricSDL2
+
+  
 
 -- -- | Inner product between a sparse vector and another type of vector
 -- class InnerS v a where
@@ -113,22 +118,36 @@ innerSD (SV _ vv1) vv2 = go 0
             (xl * xr +) $ go (succ i)
 
 
--- | Vector distance induced by the L2 norm
-metricL2 :: (Floating a, VU.Unbox a) => SVector a -> SVector a -> a
-metricL2 u v = normL2 (u .-. v)
 
--- | L2 norm
-normL2 :: (Floating a, VU.Unbox a) => SVector a -> a
-normL2 v = sqrt $ v `innerS` v
+-- | Vector distance induced by the L2 norm (sparse-sparse)
+metricSSL2 :: (Floating a, VG.Vector v a, VU.Unbox a, VG.Vector v (Int, a)) =>
+            SVector a -> v (Int, a) -> a
+metricSSL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
+  where
+    duv = u `diffSS` v
 
--- | Vector difference
-(.-.) :: (VU.Unbox a, Num a) => SVector a -> SVector a -> SVector a
-(.-.) = binSS (-) 0
+-- | Vector distance induced by the L2 norm (sparse-dense)
+metricSDL2 :: (Floating a, VU.Unbox a, VG.Vector v a) =>
+              SVector a -> v a -> a
+metricSDL2 u v = sqrt $ VG.sum $ VG.map (** 2) duv
+  where
+    duv = u `diffSD` v
+
+
+diffSD :: (VG.Vector v a, VU.Unbox a, Num a) => SVector a -> v a -> v a
+diffSD = binSD (-)
+
+-- -- | Vector difference
+-- (.-.) :: (VU.Unbox a, Num a) => SVector a -> SVector a -> SVector a
+diffSS :: (VG.Vector v (Int, a), VU.Unbox a, Num a) => SVector a -> v (Int, a) -> v (Int, a)
+diffSS = binSS (-) 0
 
 -- | Binary operation on 'SVector' s
-binSS :: (VU.Unbox a, VU.Unbox p) =>
-         (p -> p -> a) -> p -> SVector p -> SVector p -> SVector a
-binSS f z (SV n1 vv1) (SV n2 vv2) = SV (min n1 n2) $ VG.unfoldr go (0, 0)
+-- binSS :: (VU.Unbox a, VU.Unbox p) =>
+--          (p -> p -> a) -> p -> SVector p -> SVector p -> SVector a
+binSS :: (VG.Vector v (Int, a), VU.Unbox a) =>
+         (a -> a -> a) -> a -> SVector a -> v (Int, a) -> v (Int, a)
+binSS f z (SV _ vv1) vv2 = VG.unfoldr go (0, 0)
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
@@ -143,3 +162,18 @@ binSS f z (SV n1 vv1) (SV n2 vv2) = SV (min n1 n2) $ VG.unfoldr go (0, 0)
             LT -> Just ((il, f xl z ), (succ i1, i2     ))
             GT -> Just ((ir, f z  xr), (i1     , succ i2))
 
+
+
+binSD :: (VG.Vector v a, VU.Unbox a) =>
+         (a -> a -> a) -> SVector a -> v a -> v a
+binSD f (SV _ vv1) vv2 = VG.unfoldr go 0
+  where
+    nz1 = VG.length vv1
+    nz2 = VG.length vv2
+    go i
+      | i >= nz1 || i >= nz2 = Nothing
+      | otherwise = Just (y, succ i)
+          where
+            (il, xl) = vv1 VG.! i
+            xr       = vv2 VG.! il
+            y = f xl xr
