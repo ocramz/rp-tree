@@ -59,8 +59,12 @@ import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, InnerS(..), in
 
 import Data.RPTree.Draw (draw)
 
+-- ^ recall-at-k
 recall :: (Ord d, VU.Unbox d, Floating d, Fractional a) =>
-          RPTree d [SVector d] -> Int -> SVector d -> a
+          RPTree d [SVector d]
+       -> Int -- ^ number of nearest neighbors to consider
+       -> SVector d -- ^ query
+       -> a
 recall = recallWith metricL2
 
 recallWith :: (Fractional a, InnerS v, VU.Unbox d, Ord d, Ord a3, Ord xx, Num d) =>
