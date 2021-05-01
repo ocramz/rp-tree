@@ -8,9 +8,12 @@
 -- {-# language MultiParamTypeClasses #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree (
+  -- * Construction
   build
-  ,
-  RPTree
+  -- * Query
+  , nearest
+  -- * Types
+  , RPTree
   -- *
   , SVector, fromList
   -- * inner product
@@ -93,6 +96,23 @@ build maxDepth pnz dim xss = do
   (rpt, _) <- flip runStateT 0 $ loop xss
   pure $ RPTree rvs rpt
 
+
+-- | Retrieve points nearest to the query
+nearest :: (InnerS v, VU.Unbox a, Ord a, Num a) =>
+           RPTree u a
+        -> v a -- ^ query point
+        -> [u a]
+nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
+  where
+    go (Tip xs) = pure xs
+    go (Bin thr ll rr) = do
+      ixLev <- get
+      let
+        r = rvs VG.! ixLev
+      put (ixLev + 1)
+      if r `innerS` x < thr
+        then go ll
+        else go rr
 
 
 -- build maxDepth pnz dim xss = do

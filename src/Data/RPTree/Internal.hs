@@ -29,6 +29,7 @@ data RPT v a =
   deriving (Eq, Show, Generic, Functor)
 instance (NFData a, NFData (v a)) => NFData (RPT v a)
 
+-- | Random projection trees
 data RPTree v a = RPTree {
   _rpVectors :: V.Vector (SVector a) -- ^ one random projection vector per tree level
   , _rpTree :: RPT v a
