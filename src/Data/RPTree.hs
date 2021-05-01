@@ -1,12 +1,26 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# language DeriveGeneric #-}
 {-# language LambdaCase #-}
 {-# language GeneralizedNewtypeDeriving #-}
+{-# language MultiParamTypeClasses #-}
 {-# options_ghc -Wno-unused-imports #-}
-module Data.RPTree where
+module Data.RPTree (
+  build
+  , RPTree
+  -- *
+  , SVector, fromList
+  , InnerS(..)
+  -- * random generation
+  , Gen, evalGen
+  -- ** distributions
+  , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
+  ) where
 
-import Data.Foldable (Foldable(..))
+import Data.Foldable (Foldable(..), maximumBy, minimumBy)
+import Data.List (partition)
+import Data.Ord (comparing)
 import GHC.Generics (Generic)
 import GHC.Word (Word64)
 
@@ -21,41 +35,85 @@ import Control.Monad.State (MonadState(..), modify)
 -- splitmix
 import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
-import Control.Monad.Trans.State (State, runState, evalState)
+import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
+import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length)
 import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-data RPTree v a =
+data RPT v a =
   Bin {
-  _rpVector :: !(v a)
-  , _rpThreshold :: ! a
-  , _rpL :: !(RPTree v a)
-  , _rpR :: !(RPTree v a) }
-  | Tip [a]
+  _rpThreshold :: ! a
+  , _rpL :: !(RPT v a)
+  , _rpR :: !(RPT v a) }
+  | Tip [v a]
   deriving (Eq, Show, Generic, Functor)
+instance (NFData a, NFData (v a)) => NFData (RPT v a)
+
+data RPTree v a = RPTree {
+  _rpVectors :: Seq (SVector a) -- ^ one random projection vector per tree level
+  , _rpTree :: RPT v a
+                         } deriving (Eq, Show, Generic)
 instance (NFData a, NFData (v a)) => NFData (RPTree v a)
 
-empty :: RPTree v a
-empty = Tip mempty
+-- | Build a random projection tree
+build :: (InnerS v Double) =>
+         Int -- ^ maximum tree depth
+      -> Double -- ^ nonzero density of sparse projection vectors
+      -> Int -- ^ dimension of projection vectors
+      -> [v Double] -- ^ dataset
+      -> Gen (RPTree v Double)
+build maxDepth pnz dim xss = do
+  (rpt, (_, rs)) <- flip runStateT (0, mempty) $ loop xss
+  pure $ RPTree rs rpt
+  where
+    loop xs = do
+      (ixLev, rAcc) <- get
+      if ixLev >= maxDepth
+        then
+        pure $ Tip xs
+        else
+        do
+          r <- lift $ sparse pnz dim stdNormal
+          let
+            projs = map (\x -> (x, innerS r x)) xs
+            hi = snd $ maximumBy (comparing snd) projs
+            lo = snd $ minimumBy (comparing snd) projs
+          thr <- lift $ uniformR lo hi
+          let
+            (ll, rr) = partition (\xp -> snd xp < thr) projs
+            rAcc' = rAcc |> r
+          put (ixLev + 1, rAcc')
+          tl <- loop $ map fst ll
+          tr <- loop $ map fst rr
+          pure $ Bin thr tl tr
 
 
 
 
 
-class Inner v where
-  inner :: SVector a -> v a -> a
+-- | Inner product between a sparse vector and another type of vector
+class InnerS v a where
+  innerS :: SVector a -> v a -> a
+
+instance (VU.Unbox a, Num a) => InnerS SVector a where
+  innerS sv1 (SV _ sv2) = innerSS sv1 sv2
+instance (VU.Unbox a, Num a) => InnerS VU.Vector a where
+  innerS = innerSD
 
 -- | Sparse vectors with unboxed components
-data SVector a = SV { svDim :: !Int, svVector :: VU.Vector (Int, a) } deriving (Eq, Show)
+data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Show, Generic)
+instance NFData (SVector a)
 
 fromList :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
 fromList n ll = SV n $ VU.fromList ll
 
-innerSv :: (Num a, VU.Unbox a) => SVector a -> SVector a -> a
-innerSv (SV _ vv1) (SV _ vv2) = go 0 0
+-- | sparse-sparse inner product
+innerSS :: (VG.Vector v (Int, a), VU.Unbox a, Num a) =>
+           SVector a -> v (Int, a) -> a
+innerSS (SV _ vv1) vv2 = go 0 0
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
@@ -69,6 +127,22 @@ innerSv (SV _ vv1) (SV _ vv2) = go 0 0
             EQ -> (xl * xr +) $ go (succ i1) (succ i2)
             LT -> go (succ i1) i2
             GT -> go i1 (succ i2)
+
+-- | sparse-dense inner product
+innerSD :: (Num a, VG.Vector v a, VU.Unbox a) =>
+           SVector a -> v a -> a
+innerSD (SV _ vv1) vv2 = go 0
+  where
+    nz1 = VG.length vv1
+    nz2 = VG.length vv2
+    go i
+      | i >= nz1 || i >= nz2 = 0
+      | otherwise =
+          let
+            (il, xl) = vv1 VG.! i
+            xr       = vv2 VG.! il
+          in
+            (xl * xr +) $ go (succ i)
 
 -- | Generate a sparse vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: VU.Unbox a =>
@@ -113,8 +187,25 @@ sparseVG p sz rand = VG.unfoldrM mkf 0
 bernoulli :: Double -> Gen Bool
 bernoulli p = withGen (bernoulliF p)
 
+uniformR :: Double -- ^ low
+         -> Double -- ^ high
+         -> Gen Double
+uniformR lo hi = scale <$> stdUniform
+  where
+    scale x = x * (hi - lo) + lo
+
+-- standard normal
+stdNormal :: Gen Double
+stdNormal = normal 0 1
+
+stdUniform :: Gen Double
+stdUniform = withGen nextDouble
+
 normal :: Double -> Double -> Gen Double
 normal mu sig = withGen (normalF mu sig)
+
+exponential :: Double -> Gen Double
+exponential l = withGen (exponentialF l)
 
 withGen :: (SMGen -> (a, SMGen)) -> Gen a
 withGen f = Gen $ do
@@ -124,6 +215,8 @@ withGen f = Gen $ do
   put gen'
   pure b
 
+exponentialF :: Double -> SMGen -> (Double, SMGen)
+exponentialF l g = (exponentialICDF l x, g') where (x, g') = nextDouble g
 
 normalF :: Double -> Double -> SMGen -> (Double, SMGen)
 normalF mu sig g = (normalICDF mu sig x, g') where (x, g') = nextDouble g
