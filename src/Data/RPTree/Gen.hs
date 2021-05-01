@@ -81,10 +81,13 @@ stdNormal = normal 0 1
 stdUniform :: Gen Double
 stdUniform = withGen nextDouble
 
-normal :: Double -> Double -> Gen Double
+normal :: Double -- ^ mean
+       -> Double -- ^ std.dev.
+       -> Gen Double
 normal mu sig = withGen (normalF mu sig)
 
-exponential :: Double -> Gen Double
+exponential :: Double -- ^ rate parameter
+            -> Gen Double
 exponential l = withGen (exponentialF l)
 
 withGen :: (SMGen -> (a, SMGen)) -> Gen a

@@ -53,6 +53,8 @@ import qualified Data.Vector.Storable as VS (Vector)
 import Data.RPTree.Gen (Gen, evalGen, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
 import Data.RPTree.Internal (RPTree(..), RPT(..), InnerS(..), innerSD, innerSS, SVector(..), fromList)
 
+import Data.RPTree.Draw (draw)
+
 
 -- | Build a random projection tree
 --
@@ -124,15 +126,10 @@ build maxDepth pnz dim xss = do
 
 
 
-
-
-
-
-
 -- test data
 
 tt0 :: RPTree P Double
-tt0 = evalGen 1337 $ build 3 0.2 5 (genDataset 1000 5)
+tt0 = evalGen 1337 $ build 5 0.5 2 (genDataset 6 2)
 
 genDataset :: Int -> Int -> [P Double]
 genDataset m d = evalGen 1234 $ replicateM m (genP d)
