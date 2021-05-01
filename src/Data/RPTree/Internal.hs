@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -8,35 +10,49 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
 
+import Data.Foldable (fold)
+
 import GHC.Generics (Generic)
 
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM)
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldr, unfoldrM, length, replicateM)
 import qualified Data.Vector.Generic as VG ((!))
-import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
+import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 
-data RPT v a =
+data RPT d a =
   Bin {
-  _rpThreshold :: ! a
-  , _rpL :: !(RPT v a)
-  , _rpR :: !(RPT v a) }
-  | Tip [v a]
-  deriving (Eq, Show, Generic, Functor)
-instance (NFData a, NFData (v a)) => NFData (RPT v a)
+  _rpThreshold :: !d
+  , _rpL :: !(RPT d a)
+  , _rpR :: !(RPT d a) }
+  | Tip a
+  deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+instance (NFData v, NFData a) => NFData (RPT v a)
 
 -- | Random projection trees
-data RPTree v a = RPTree {
-  _rpVectors :: V.Vector (SVector a) -- ^ one random projection vector per tree level
-  , _rpTree :: RPT v a
-                         } deriving (Eq, Show, Generic)
-instance (NFData a, NFData (v a)) => NFData (RPTree v a)
+--
+-- The first type parameter corresponds to a floating point scalar value, the second is the type of the data collected at the leaves of the tree (e.g. lists of vectors)
+--
+-- We keep them separate to leverage the Functor instance for postprocessing and visualization
+data RPTree d a = RPTree {
+  _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
+  , _rpTree :: RPT d a
+                         } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
+instance (NFData a, NFData d) => NFData (RPTree d a)
 
+-- | Number of tree levels
+levels :: RPTree d a -> Int
+levels (RPTree v _) = VG.length v
 
+-- | Set of data points used to construct the index
+points :: Monoid m => RPTree d m -> m
+points (RPTree _ t) = fold t
+
+-- | Inner product with a sparse vector
 class InnerS v where
   innerS :: (VU.Unbox a, Num a) => SVector a -> v a -> a
 instance InnerS SVector where
@@ -54,7 +70,9 @@ instance InnerS VU.Vector where
 --   innerS = innerSD
 
 -- | Sparse vectors with unboxed components
-data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Show, Generic)
+data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
+instance (VU.Unbox a, Show a) => Show (SVector a) where
+  show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
 instance NFData (SVector a)
 
 fromList :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
@@ -93,3 +111,35 @@ innerSD (SV _ vv1) vv2 = go 0
             xr       = vv2 VG.! il
           in
             (xl * xr +) $ go (succ i)
+
+
+-- | Vector distance induced by the L2 norm
+metricL2 :: (Floating a, VU.Unbox a) => SVector a -> SVector a -> a
+metricL2 u v = normL2 (u .-. v)
+
+-- | L2 norm
+normL2 :: (Floating a, VU.Unbox a) => SVector a -> a
+normL2 v = sqrt $ v `innerS` v
+
+-- | Vector difference
+(.-.) :: (VU.Unbox a, Num a) => SVector a -> SVector a -> SVector a
+(.-.) = binSS (-) 0
+
+-- | Binary operation on 'SVector' s
+binSS :: (VU.Unbox a, VU.Unbox p) =>
+         (p -> p -> a) -> p -> SVector p -> SVector p -> SVector a
+binSS f z (SV n1 vv1) (SV n2 vv2) = SV (min n1 n2) $ VG.unfoldr go (0, 0)
+  where
+    nz1 = VG.length vv1
+    nz2 = VG.length vv2
+    go (i1, i2)
+      | i1 >= nz1 || i2 >= nz2 = Nothing
+      | otherwise =
+          let
+            (il, xl) = vv1 VG.! i1
+            (ir, xr) = vv2 VG.! i2
+          in case il `compare` ir of
+            EQ -> Just ((il, f xl xr), (succ i1, succ i2))
+            LT -> Just ((il, f xl z ), (succ i1, i2     ))
+            GT -> Just ((ir, f z  xr), (i1     , succ i2))
+

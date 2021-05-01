@@ -28,13 +28,14 @@ module Data.RPTree (
 
 import Control.Monad (replicateM)
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
-import Data.List (partition)
+import Data.List (partition, sortBy)
 import Data.Ord (comparing)
 import GHC.Generics (Generic)
 import GHC.Word (Word64)
 
 -- containers
-import Data.Sequence (Seq, (|>))
+-- import Data.Sequence (Seq, (|>))
+import qualified Data.Set as S (Set, fromList, intersection)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- erf
@@ -54,9 +55,24 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (Gen, evalGen, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
-import Data.RPTree.Internal (RPTree(..), RPT(..), InnerS(..), innerSD, innerSS, SVector(..), fromList)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, InnerS(..), innerSD, innerSS, SVector(..), fromList, metricL2)
 
 import Data.RPTree.Draw (draw)
+
+recall :: (Ord d, VU.Unbox d, Floating d, Fractional a) =>
+          RPTree d [SVector d] -> Int -> SVector d -> a
+recall = recallWith metricL2
+
+recallWith :: (Fractional a, InnerS v, VU.Unbox d, Ord d, Ord a3, Ord xx, Num d) =>
+              (xx -> v d -> a3)
+           -> RPTree d [xx] -> Int -> v d -> a
+recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
+  where
+    xs = points tt
+    dists = sortBy (comparing snd) $ map (\x -> (x, x `distf` q)) xs
+    kk = S.fromList $ map fst $ take k dists
+    aa = S.fromList $ nearest tt q
+    aintk = aa `S.intersection` kk
 
 
 -- | Build a random projection tree
@@ -67,7 +83,7 @@ build :: (InnerS v) =>
       -> Double -- ^ nonzero density of sparse projection vectors
       -> Int -- ^ dimension of projection vectors
       -> [v Double] -- ^ dataset
-      -> Gen (RPTree v Double)
+      -> Gen (RPTree Double [v Double])
 build maxDepth pnz dim xss = do
   -- sample all projection vectors
   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
@@ -98,10 +114,10 @@ build maxDepth pnz dim xss = do
 
 
 -- | Retrieve points nearest to the query
-nearest :: (InnerS v, VU.Unbox a, Ord a, Num a) =>
-           RPTree u a
-        -> v a -- ^ query point
-        -> [u a]
+nearest :: (InnerS v, Ord d, VU.Unbox d, Num d) =>
+           RPTree d xs
+        -> v d -- ^ query point
+        -> xs
 nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
   where
     go (Tip xs) = pure xs
@@ -148,15 +164,37 @@ nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 -- test data
 
-tt0 :: RPTree P Double
-tt0 = evalGen 1337 $ build 5 0.5 2 (genDataset 6 2)
 
-genDataset :: Int -> Int -> [P Double]
-genDataset m d = evalGen 1234 $ replicateM m (genP d)
 
-genP :: Int -> Gen (P Double)
-genP d = P <$> VG.replicateM d stdNormal
 
-newtype P a = P (VU.Vector a) deriving (Eq, Show)
-instance InnerS P where
-  innerS sv1 (P v) = innerSD sv1 v
+normalSv :: Double -> Double -> Int -> Gen (SVector Double)
+normalSv mu sig dim = sparse 0.5 dim (normal mu sig)
+
+tt0 :: RPTree Double [SVector Double]
+tt0 = evalGen 1337 $ build 20 1.0 2 (gaussMix 200 2)
+
+-- genDataset :: Int -> Int -> [P Double]
+-- genDataset m d = evalGen 1234 $ replicateM m (genP d)
+
+-- genP :: Int -> Gen (P Double)
+-- genP d = P <$> VG.replicateM d stdNormal
+
+gaussMix :: Int -> Int -> [SVector Double]
+gaussMix m dim = evalGen 1234 $ replicateM m (genGaussMix dim)
+
+genGaussMix :: Int -> Gen (SVector Double)
+genGaussMix dim = do
+  b <- bernoulli 0.5
+  if b
+    then normalSv 0 1 dim
+    else normalSv 3 2 dim
+
+-- normalP :: Double -> Double -> Int -> Gen (P Double)
+-- normalP mu sig d = P <$> VG.replicateM d (normal mu sig)
+
+-- mkP :: (VU.Unbox a) => [a] -> P a
+-- mkP = P . VU.fromList
+
+-- newtype P a = P (VU.Vector a) deriving (Eq, Show)
+-- instance InnerS P where
+--   innerS sv1 (P v) = innerSD sv1 v
