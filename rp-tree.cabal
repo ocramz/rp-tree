@@ -19,7 +19,11 @@ library
   ghc-options:         -Wall
   hs-source-dirs:      src
   exposed-modules:     Data.RPTree
+  other-modules:       Data.RPTree.Internal
+                       Data.RPTree.Gen
+                       Data.RPTree.Draw
   build-depends:       base >= 4.7 && < 5
+                     , boxes
                      , containers >= 0.6.2.1
                      , deepseq >= 1.4.4.0
                      , erf >= 2.0
