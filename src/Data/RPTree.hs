@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -7,8 +8,9 @@
 {-# language MultiParamTypeClasses #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree (
-  build
-  , RPTree
+  -- build
+  -- ,
+  RPTree
   -- *
   , SVector, fromList
   , InnerS(..)
@@ -18,6 +20,7 @@ module Data.RPTree (
   , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
   ) where
 
+import Control.Monad (replicateM)
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
 import Data.List (partition)
 import Data.Ord (comparing)
@@ -38,7 +41,7 @@ import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length)
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM)
 import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
@@ -59,7 +62,9 @@ data RPTree v a = RPTree {
 instance (NFData a, NFData (v a)) => NFData (RPTree v a)
 
 -- | Build a random projection tree
-build :: (InnerS v Double) =>
+--
+-- Optimization: instead of sampling one random vector per branch, consider sampling one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
+build :: (InnerS v) =>
          Int -- ^ maximum tree depth
       -> Double -- ^ nonzero density of sparse projection vectors
       -> Int -- ^ dimension of projection vectors
@@ -76,11 +81,14 @@ build maxDepth pnz dim xss = do
         pure $ Tip xs
         else
         do
+          -- sample a projection vector
           r <- lift $ sparse pnz dim stdNormal
           let
+            -- project the dataset
             projs = map (\x -> (x, innerS r x)) xs
             hi = snd $ maximumBy (comparing snd) projs
             lo = snd $ minimumBy (comparing snd) projs
+          -- sample a threshold
           thr <- lift $ uniformR lo hi
           let
             (ll, rr) = partition (\xp -> snd xp < thr) projs
@@ -93,15 +101,21 @@ build maxDepth pnz dim xss = do
 
 
 
-
--- | Inner product between a sparse vector and another type of vector
-class InnerS v a where
-  innerS :: SVector a -> v a -> a
-
-instance (VU.Unbox a, Num a) => InnerS SVector a where
+class InnerS v where
+  innerS :: (VU.Unbox a, Num a) => SVector a -> v a -> a
+instance InnerS SVector where
   innerS sv1 (SV _ sv2) = innerSS sv1 sv2
-instance (VU.Unbox a, Num a) => InnerS VU.Vector a where
+instance InnerS VU.Vector where
   innerS = innerSD
+
+-- -- | Inner product between a sparse vector and another type of vector
+-- class InnerS v a where
+--   innerS :: SVector a -> v a -> a
+
+-- instance (VU.Unbox a, Num a) => InnerS SVector a where
+--   innerS sv1 (SV _ sv2) = innerSS sv1 sv2
+-- instance (VU.Unbox a, VG.Vector v a, Num a) => InnerS v a where
+--   innerS = innerSD
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Show, Generic)
@@ -237,3 +251,19 @@ exponentialICDF :: Floating a =>
                    a -- ^ rate
                 -> a -> a
 exponentialICDF l p = (- 1 / l) * log (1 - p)
+
+
+-- test data
+
+tt0 :: RPTree P Double
+tt0 = evalGen 1337 $ build 3 0.5 5 (genDataset 10 10)
+
+genDataset :: Int -> Int -> [P Double]
+genDataset m d = evalGen 1234 $ replicateM m (genP d)
+
+genP :: Int -> Gen (P Double)
+genP d = P <$> VG.replicateM d stdNormal
+
+newtype P a = P (VU.Vector a) deriving (Eq, Show)
+instance InnerS P where
+  innerS sv1 (P v) = innerSD sv1 v
