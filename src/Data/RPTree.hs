@@ -8,6 +8,7 @@ module Data.RPTree where
 
 import Data.Foldable (Foldable(..))
 import GHC.Generics (Generic)
+import GHC.Word (Word64)
 
 -- containers
 import Data.Sequence (Seq, (|>))
@@ -22,8 +23,9 @@ import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
 import Control.Monad.Trans.State (State, runState, evalState)
 -- vector
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM)
-import qualified Data.Vector.Unboxed as VU (Vector, Unbox)
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length)
+import qualified Data.Vector.Generic as VG ((!))
+import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 data RPTree v a =
@@ -34,17 +36,39 @@ data RPTree v a =
   , _rpR :: !(RPTree v a) }
   | Tip [a]
   deriving (Eq, Show, Generic, Functor)
-
 instance (NFData a, NFData (v a)) => NFData (RPTree v a)
 
+empty :: RPTree v a
+empty = Tip mempty
 
 
 
 
 
+class Inner v where
+  inner :: SVector a -> v a -> a
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: !Int, svVector :: VU.Vector (Int, a) } deriving (Eq, Show)
+
+fromList :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
+fromList n ll = SV n $ VU.fromList ll
+
+innerSv :: (Num a, VU.Unbox a) => SVector a -> SVector a -> a
+innerSv (SV _ vv1) (SV _ vv2) = go 0 0
+  where
+    nz1 = VG.length vv1
+    nz2 = VG.length vv2
+    go i1 i2
+      | i1 >= nz1 || i2 >= nz2 = 0
+      | otherwise =
+          let
+            (il, xl) = vv1 VG.! i1
+            (ir, xr) = vv2 VG.! i2
+          in case il `compare` ir of
+            EQ -> (xl * xr +) $ go (succ i1) (succ i2)
+            LT -> go (succ i1) i2
+            GT -> go i1 (succ i2)
 
 -- | Generate a sparse vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: VU.Unbox a =>
@@ -63,8 +87,10 @@ class MonadGen m where
   liftGen :: Gen a -> m a
 
 
-evalGen :: Gen a -> a
-evalGen gg = evalState (unGen gg) (mkSMGen 1337)
+evalGen :: Word64 -- ^ random seed
+        -> Gen a
+        -> a
+evalGen seed gg = evalState (unGen gg) (mkSMGen seed)
 
 
 
