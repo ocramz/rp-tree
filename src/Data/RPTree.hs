@@ -12,6 +12,8 @@ module Data.RPTree (
   build
   -- * Query
   , nearest
+  -- * Access
+  , levels, points
   -- * Types
   , RPTree
   -- *
@@ -23,10 +25,15 @@ module Data.RPTree (
   , innerSS, innerSD
     -- *** L2 distance
   , metricSSL2, metricSDL2
-  -- * random generation
+  -- * Random generation
+  -- ** pure
   , Gen, evalGen
-  -- ** distributions
+  -- ** monadic
+  , GenT, evalGenT
+  -- ** scalar distributions
   , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
+  -- ** multivariate
+  , sparse
   ) where
 
 import Control.Monad (replicateM)
@@ -50,6 +57,8 @@ import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
+-- ulid
+import qualified Data.ULID as UU (ULID, getULID)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM)
@@ -57,7 +66,7 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-import Data.RPTree.Gen (Gen, evalGen, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
+import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
 import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromList)
 
 import Data.RPTree.Draw (draw)
@@ -122,10 +131,10 @@ build maxDepth pnz dim xss = do
 
 
 -- | Retrieve points nearest to the query
--- nearest :: (Inner v, Ord d, VU.Unbox d, Num d) =>
---            RPTree d xs
---         -> v d -- ^ query point
---         -> xs
+nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
+           RPTree d xs
+        -> v d -- ^ query point
+        -> xs
 nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
   where
     go (Tip xs) = pure xs
@@ -170,39 +179,3 @@ nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 
 
--- test data
-
-
-
-
-normalSv :: Double -> Double -> Int -> Gen (SVector Double)
-normalSv mu sig dim = sparse 0.5 dim (normal mu sig)
-
-tt0 :: RPTree Double [SVector Double]
-tt0 = evalGen 1337 $ build 20 1.0 2 (gaussMix 200 2)
-
--- genDataset :: Int -> Int -> [P Double]
--- genDataset m d = evalGen 1234 $ replicateM m (genP d)
-
--- genP :: Int -> Gen (P Double)
--- genP d = P <$> VG.replicateM d stdNormal
-
-gaussMix :: Int -> Int -> [SVector Double]
-gaussMix m dim = evalGen 1234 $ replicateM m (genGaussMix dim)
-
-genGaussMix :: Int -> Gen (SVector Double)
-genGaussMix dim = do
-  b <- bernoulli 0.5
-  if b
-    then normalSv 0 1 dim
-    else normalSv 3 2 dim
-
--- normalP :: Double -> Double -> Int -> Gen (P Double)
--- normalP mu sig d = P <$> VG.replicateM d (normal mu sig)
-
--- mkP :: (VU.Unbox a) => [a] -> P a
--- mkP = P . VU.fromList
-
--- newtype P a = P (VU.Vector a) deriving (Eq, Show)
--- instance InnerS P where
---   innerS sv1 (P v) = innerSD sv1 v

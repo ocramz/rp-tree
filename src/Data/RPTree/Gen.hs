@@ -5,11 +5,14 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Gen where
 
+import Control.Monad.IO.Class (MonadIO(..))
+import Data.Functor.Identity (Identity(..))
 import GHC.Word (Word64)
 
 -- erf
 import Data.Number.Erf (InvErf(..))
 -- mtl
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
 -- splitmix
 import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
@@ -24,7 +27,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromList)
 
--- | Generate a sparse vector with a given nonzero density and components sampled from the supplied random generator
+-- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: VU.Unbox a =>
           Double -- ^ nonzero density
        -> Int -- ^ size
@@ -32,22 +35,27 @@ sparse :: VU.Unbox a =>
        -> Gen (SVector a)
 sparse p sz rand = SV sz <$> sparseVG p sz rand
 
--- | Pure random generator
+-- | Random generator
 --
--- wraps 'splitmix' state passing inside a 'State' monad
-newtype Gen a = Gen { unGen :: State SMGen a } deriving (Functor, Applicative, Monad, MonadState SMGen)
+-- wraps 'splitmix' state-passing inside a 'StateT' monad
+newtype GenT m a = GenT { unGen :: StateT SMGen m a } deriving (Functor, Applicative, Monad, MonadState SMGen, MonadTrans, MonadIO)
 
-class MonadGen m where
-  liftGen :: Gen a -> m a
+type Gen = GenT Identity
 
+-- | Monadic evaluation
+evalGenT :: Monad m =>
+            Word64 -- ^ random seed
+         -> GenT m a -> m a
+evalGenT seed gg = evalStateT (unGen gg) (mkSMGen seed)
 
+-- | Pure evaluation
 evalGen :: Word64 -- ^ random seed
         -> Gen a
         -> a
 evalGen seed gg = evalState (unGen gg) (mkSMGen seed)
 
 
-
+-- | Generate a sparse random vector
 sparseVG :: (VG.Vector v (Int, a)) =>
             Double -> Int -> Gen a -> Gen (v (Int, a))
 sparseVG p sz rand = VG.unfoldrM mkf 0
@@ -64,9 +72,11 @@ sparseVG p sz rand = VG.unfoldrM mkf 0
             else
               mkf (succ i)
 
+-- | Bernoulli trial
 bernoulli :: Double -> Gen Bool
 bernoulli p = withGen (bernoulliF p)
 
+-- | Uniform between two values
 uniformR :: Double -- ^ low
          -> Double -- ^ high
          -> Gen Double
@@ -74,24 +84,30 @@ uniformR lo hi = scale <$> stdUniform
   where
     scale x = x * (hi - lo) + lo
 
--- standard normal
+-- | Standard normal
 stdNormal :: Gen Double
 stdNormal = normal 0 1
 
+-- | Uniform in [0, 1)
 stdUniform :: Gen Double
 stdUniform = withGen nextDouble
 
+-- | Normal distribution
 normal :: Double -- ^ mean
        -> Double -- ^ std.dev.
        -> Gen Double
 normal mu sig = withGen (normalF mu sig)
 
+-- | Exponential distribution
 exponential :: Double -- ^ rate parameter
             -> Gen Double
 exponential l = withGen (exponentialF l)
 
-withGen :: (SMGen -> (a, SMGen)) -> Gen a
-withGen f = Gen $ do
+-- | Wrap a 'splitmix' PRNG function
+withGen :: Monad m =>
+           (SMGen -> (a, SMGen))
+        -> GenT m a
+withGen f = GenT $ do
   gen <- get
   let
     (b, gen') = f gen
