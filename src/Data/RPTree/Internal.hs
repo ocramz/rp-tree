@@ -13,10 +13,16 @@ module Data.RPTree.Internal where
 
 import Data.Foldable (fold)
 
+import Control.Monad.IO.Class (MonadIO(..))
+import Data.Functor.Identity (Identity(..))
 import GHC.Generics (Generic)
 
 -- deepseq
 import Control.DeepSeq (NFData(..))
+-- mtl
+import Control.Monad.State (MonadState(..), modify)
+-- transformers
+import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
 import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM)
@@ -24,6 +30,19 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 
+
+
+-- | Label a value with a unique identifier
+-- labelId
+newtype LabelT m a = LabelT {unLabelT :: StateT Integer m a} deriving (Functor, Applicative, Monad, MonadState Integer, MonadIO)
+type Label = LabelT Identity
+runLabelT :: (Monad m) => LabelT m a -> m a
+runLabelT = flip evalStateT 0 . unLabelT
+label :: Monad m => a -> LabelT m (Id a)
+label x = LabelT $ do { i <- get ; put (i + 1); pure (Id x i)}
+data Id a = Id { idData :: a , idLabel :: !Integer } deriving (Eq, Show)
+instance (Eq a) => Ord (Id a) where
+  Id _ u1 <= Id _ u2 = u1 <= u2
 
 data RPT d a =
   Bin {

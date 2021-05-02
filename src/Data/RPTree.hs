@@ -37,7 +37,9 @@ module Data.RPTree (
   ) where
 
 import Control.Monad (replicateM)
+import Control.Monad.IO.Class (MonadIO(..))
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
+import Data.Functor.Identity (Identity(..))
 import Data.List (partition, sortBy)
 import Data.Ord (comparing)
 import GHC.Generics (Generic)
@@ -70,6 +72,8 @@ import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUnif
 import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromList)
 
 import Data.RPTree.Draw (draw)
+
+
 
 -- ^ recall-at-k
 recall :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
@@ -179,3 +183,10 @@ nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 
 
+
+
+-- ulid :: MonadIO m => a -> m (ULID a)
+-- ulid x = ULID <$> pure x <*> liftIO UU.getULID
+-- data ULID a = ULID { uData :: a , uULID :: UU.ULID } deriving (Eq, Show)
+-- instance (Eq a) => Ord (ULID a) where
+--   ULID _ u1 <= ULID _ u2 = u1 <= u2
