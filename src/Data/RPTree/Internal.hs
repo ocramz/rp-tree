@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# language DeriveGeneric #-}
 {-# language LambdaCase #-}
+{-# language MultiParamTypeClasses #-}
 {-# language GeneralizedNewtypeDeriving #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
@@ -52,27 +53,20 @@ levels (RPTree v _) = VG.length v
 points :: Monoid m => RPTree d m -> m
 points (RPTree _ t) = fold t
 
--- | Inner product with a sparse vector
-class InnerS v where
-  innerS :: (VU.Unbox a, Num a) => SVector a -> v a -> a
-  metricL2 :: (VU.Unbox a, Floating a) => SVector a -> v a -> a
-instance InnerS SVector where
-  innerS sv1 (SV _ sv2) = innerSS sv1 sv2
-  metricL2 v1 (SV _ v2) = metricSSL2 v1 v2
-instance InnerS VU.Vector where
-  innerS = innerSD
-  metricL2 = metricSDL2
+-- | Inner product spaces
+--
+-- This typeclass is provided as a convenience for library users to interface their own vector types.
+class Inner u v where
+  inner :: (VU.Unbox a, Num a) => u a -> v a -> a
+  metricL2 :: (VU.Unbox a, Floating a) => u a -> v a -> a
+instance Inner SVector SVector where
+  inner (SV _ v1) (SV _ v2) = innerSS v1 v2
+  metricL2 (SV _ v1) (SV _ v2)= metricSSL2 v1 v2
+instance Inner SVector VU.Vector where
+  inner (SV _ v1) v2 = innerSD v1 v2
+  metricL2 (SV _ v1) v2 = metricSDL2 v1 v2
 
-  
 
--- -- | Inner product between a sparse vector and another type of vector
--- class InnerS v a where
---   innerS :: SVector a -> v a -> a
-
--- instance (VU.Unbox a, Num a) => InnerS SVector a where
---   innerS sv1 (SV _ sv2) = innerSS sv1 sv2
--- instance (VU.Unbox a, VG.Vector v a, Num a) => InnerS v a where
---   innerS = innerSD
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
@@ -84,9 +78,9 @@ fromList :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
 fromList n ll = SV n $ VU.fromList ll
 
 -- | sparse-sparse inner product
-innerSS :: (VG.Vector v (Int, a), VU.Unbox a, Num a) =>
-           SVector a -> v (Int, a) -> a
-innerSS (SV _ vv1) vv2 = go 0 0
+innerSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
+           u (Int, a) -> v (Int, a) -> a
+innerSS vv1 vv2 = go 0 0
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
@@ -102,9 +96,9 @@ innerSS (SV _ vv1) vv2 = go 0 0
             GT -> go i1 (succ i2)
 
 -- | sparse-dense inner product
-innerSD :: (Num a, VG.Vector v a, VU.Unbox a) =>
-           SVector a -> v a -> a
-innerSD (SV _ vv1) vv2 = go 0
+innerSD :: (Num a, VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a) =>
+           u (Int, a) -> v a -> a
+innerSD vv1 vv2 = go 0
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
@@ -120,34 +114,35 @@ innerSD (SV _ vv1) vv2 = go 0
 
 
 -- | Vector distance induced by the L2 norm (sparse-sparse)
-metricSSL2 :: (Floating a, VG.Vector v a, VU.Unbox a, VG.Vector v (Int, a)) =>
-            SVector a -> v (Int, a) -> a
+metricSSL2 :: (Floating a, VG.Vector v a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v (Int, a)) =>
+              u (Int, a) -> v (Int, a) -> a
 metricSSL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
   where
     duv = u `diffSS` v
 
 -- | Vector distance induced by the L2 norm (sparse-dense)
-metricSDL2 :: (Floating a, VU.Unbox a, VG.Vector v a) =>
-              SVector a -> v a -> a
+metricSDL2 :: (Floating a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v a) =>
+              u (Int, a)
+           -> v a -> a
 metricSDL2 u v = sqrt $ VG.sum $ VG.map (** 2) duv
   where
     duv = u `diffSD` v
 
 
-diffSD :: (VG.Vector v a, VU.Unbox a, Num a) => SVector a -> v a -> v a
+diffSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
+          u (Int, a) -> v a -> v a
 diffSD = binSD (-)
 
 -- -- | Vector difference
 -- (.-.) :: (VU.Unbox a, Num a) => SVector a -> SVector a -> SVector a
-diffSS :: (VG.Vector v (Int, a), VU.Unbox a, Num a) => SVector a -> v (Int, a) -> v (Int, a)
+diffSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
+          u (Int, a) -> v (Int, a) -> v (Int, a)
 diffSS = binSS (-) 0
 
 -- | Binary operation on 'SVector' s
--- binSS :: (VU.Unbox a, VU.Unbox p) =>
---          (p -> p -> a) -> p -> SVector p -> SVector p -> SVector a
-binSS :: (VG.Vector v (Int, a), VU.Unbox a) =>
-         (a -> a -> a) -> a -> SVector a -> v (Int, a) -> v (Int, a)
-binSS f z (SV _ vv1) vv2 = VG.unfoldr go (0, 0)
+binSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a) =>
+         (a -> a -> a) -> a -> u (Int, a) -> v (Int, a) -> v (Int, a)
+binSS f z vv1 vv2 = VG.unfoldr go (0, 0)
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
@@ -164,9 +159,9 @@ binSS f z (SV _ vv1) vv2 = VG.unfoldr go (0, 0)
 
 
 
-binSD :: (VG.Vector v a, VU.Unbox a) =>
-         (a -> a -> a) -> SVector a -> v a -> v a
-binSD f (SV _ vv1) vv2 = VG.unfoldr go 0
+binSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a) =>
+         (a -> a -> a) -> u (Int, a) -> v a -> v a
+binSD f vv1 vv2 = VG.unfoldr go 0
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2

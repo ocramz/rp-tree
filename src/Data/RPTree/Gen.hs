@@ -22,7 +22,7 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-import Data.RPTree.Internal (RPTree(..), RPT(..), InnerS(..), innerSD, innerSS, SVector(..), fromList)
+import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromList)
 
 -- | Generate a sparse vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: VU.Unbox a =>

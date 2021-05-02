@@ -17,9 +17,12 @@ module Data.RPTree (
   -- *
   , SVector, fromList
   -- * inner product
-  , InnerS(..),
-    -- ** helpers for implementing InnerS instances
-    innerSS, innerSD
+  , Inner(..)
+    -- ** helpers for implementing Inner instances
+    -- *** inner product
+  , innerSS, innerSD
+    -- *** L2 distance
+  , metricSSL2, metricSDL2
   -- * random generation
   , Gen, evalGen
   -- ** distributions
@@ -55,20 +58,21 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (Gen, evalGen, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, InnerS(..), innerSD, innerSS, SVector(..), fromList)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromList)
 
 import Data.RPTree.Draw (draw)
 
 -- ^ recall-at-k
-recall :: (InnerS v, Ord d, VU.Unbox d, Floating d, Fractional a) =>
-          RPTree d [SVector d]
+recall :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+          RPTree a [u a]
        -> Int -- ^ k : number of nearest neighbors to consider
-       -> v d -- ^ query point
-       -> a
+       -> v a  -- ^ query point
+       -> Double
 recall = recallWith metricL2
 
-recallWith :: (Fractional a1, InnerS v, Ord d, VU.Unbox d, Num d,
-                Ord a3, Ord a2) =>
+
+recallWith :: (Fractional a1, Inner SVector v, VU.Unbox d, Ord d, Ord a3,
+               Ord a2, Num d) =>
               (a2 -> v d -> a3) -> RPTree d [a2] -> Int -> v d -> a1
 recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
   where
@@ -82,7 +86,7 @@ recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
 -- | Build a random projection tree
 --
 -- Optimization: instead of sampling one random vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
-build :: (InnerS v) =>
+build :: (Inner SVector v) =>
          Int -- ^ maximum tree depth
       -> Double -- ^ nonzero density of sparse projection vectors
       -> Int -- ^ dimension of projection vectors
@@ -102,7 +106,7 @@ build maxDepth pnz dim xss = do
           let
             r = rvs VG.! ixLev
             -- project the dataset
-            projs = map (\x -> (x, innerS r x)) xs
+            projs = map (\x -> (x, r `inner` x)) xs
             hi = snd $ maximumBy (comparing snd) projs
             lo = snd $ minimumBy (comparing snd) projs
           -- sample a threshold
@@ -118,10 +122,10 @@ build maxDepth pnz dim xss = do
 
 
 -- | Retrieve points nearest to the query
-nearest :: (InnerS v, Ord d, VU.Unbox d, Num d) =>
-           RPTree d xs
-        -> v d -- ^ query point
-        -> xs
+-- nearest :: (Inner v, Ord d, VU.Unbox d, Num d) =>
+--            RPTree d xs
+--         -> v d -- ^ query point
+--         -> xs
 nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
   where
     go (Tip xs) = pure xs
@@ -130,7 +134,7 @@ nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
       let
         r = rvs VG.! ixLev
       put (ixLev + 1)
-      if r `innerS` x < thr
+      if r `inner` x < thr
         then go ll
         else go rr
 
