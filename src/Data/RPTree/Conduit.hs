@@ -1,14 +1,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# options_ghc -Wno-unused-imports #-}
-module Data.RPTree.Conduit (treeSink) where
+module Data.RPTree.Conduit (
+  treeSink
+  -- ** helpers
+  , syntheticData
+  ) where
 
 import GHC.Word (Word64)
 
 -- conduit
 import qualified Data.Conduit as C (ConduitT, runConduit, yield, await)
 import Data.Conduit ((.|))
-import qualified Data.Conduit.Combinators as C (map, mapM, scanlM, last)
-import qualified Data.Conduit.List as C (chunksOf)
+import qualified Data.Conduit.Combinators as C (map, mapM, scanlM, last, print)
+import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- transformers
@@ -22,6 +26,19 @@ import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+
+-- | Source of random data points
+syntheticData :: (Monad m, VG.Vector VU.Vector a) =>
+                 Int -- ^ number of vectors to generate
+              -> Int -- ^ vector  dimension
+              -> GenT m a -- ^ random generator for the vector components
+              -> C.ConduitT i (DVector a) (GenT m) ()
+syntheticData n dim gg = flip C.unfoldM 0 $ \i -> do
+  if i == n
+    then pure Nothing
+    else do
+      x <- dense dim gg
+      pure $ Just (x, i + 1)
 
 -- | Populate a tree from a data stream
 --
@@ -66,8 +83,9 @@ insertC maxDepth n rvs = chunked n z $ \tree0 xss -> do
   where
     z = Tip mempty
     loop ixLev tt xs = case tt of
+
       b@(Bin thr tl0 tr0) -> do
-        if ixLev >= maxDepth || length xs <= 1
+        if ixLev >= maxDepth || null xs
           then pure b -- do nothing
           else
           do

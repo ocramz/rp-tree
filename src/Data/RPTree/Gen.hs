@@ -29,15 +29,15 @@ import qualified Data.Vector.Storable as VS (Vector)
 import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..))
 
 -- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator
-sparse :: VU.Unbox a =>
+sparse :: (Monad m, VU.Unbox a) =>
           Double -- ^ nonzero density
        -> Int -- ^ size
-       -> Gen a -- ^ random generator of vector components
-       -> Gen (SVector a)
+       -> GenT m a -- ^ random generator of vector components
+       -> GenT m (SVector a)
 sparse p sz rand = SV sz <$> sparseVG p sz rand
 
-dense :: (VG.Vector VU.Vector a) =>
-         Int -> Gen a -> Gen (DVector a)
+dense :: (Monad m, VG.Vector VU.Vector a) =>
+         Int -> GenT m a -> GenT m (DVector a)
 dense sz rand = DV <$> denseVG sz rand
 
 -- | Random generator
@@ -62,7 +62,8 @@ evalGen seed gg = evalState (unGen gg) (mkSMGen seed)
 -- | Sample a dense random vector
 denseVG :: (VG.Vector v a, Monad m) =>
            Int -- ^ vector dimension
-        -> m a -> m (v a)
+        -> m a
+        -> m (v a)
 denseVG sz rand = VG.unfoldrM mkf 0
   where
     mkf i
@@ -72,10 +73,11 @@ denseVG sz rand = VG.unfoldrM mkf 0
           pure $ Just (x, succ i)
 
 -- | Sample a sparse random vector
-sparseVG :: (VG.Vector v (Int, a)) =>
+sparseVG :: (Monad m, VG.Vector v (Int, a)) =>
             Double -- ^ nonzero density
          -> Int  -- ^ vector dimension
-         -> Gen a -> Gen (v (Int, a))
+         -> GenT m a
+         -> GenT m (v (Int, a))
 sparseVG p sz rand = VG.unfoldrM mkf 0
   where
     mkf i
@@ -91,27 +93,28 @@ sparseVG p sz rand = VG.unfoldrM mkf 0
               mkf (succ i)
 
 -- | Bernoulli trial
-bernoulli :: Double -> Gen Bool
+bernoulli :: Monad m => Double -> GenT m Bool
 bernoulli p = withGen (bernoulliF p)
 
 -- | Uniform between two values
-uniformR :: Double -- ^ low
+uniformR :: Monad m =>
+            Double -- ^ low
          -> Double -- ^ high
-         -> Gen Double
+         -> GenT m Double
 uniformR lo hi = scale <$> stdUniform
   where
     scale x = x * (hi - lo) + lo
 
 -- | Standard normal
-stdNormal :: Gen Double
+stdNormal :: Monad m => GenT m Double
 stdNormal = normal 0 1
 
 -- | Uniform in [0, 1)
-stdUniform :: Gen Double
+stdUniform :: Monad m => GenT m Double
 stdUniform = withGen nextDouble
 
 -- | Beta distribution, from two standard uniform samples
-beta :: Double -> Double -> Gen Double
+beta :: Monad m => Double -> Double -> GenT m Double
 beta a b = go
   where
     go = do
@@ -125,14 +128,14 @@ beta a b = go
         f u1 u2 = (u1 ** (1/a), u2 ** (1/b))
 
 -- | Normal distribution
-normal :: Double -- ^ mean
+normal :: Monad m => Double -- ^ mean
        -> Double -- ^ std.dev.
-       -> Gen Double
+       -> GenT m Double
 normal mu sig = withGen (normalF mu sig)
 
 -- | Exponential distribution
-exponential :: Double -- ^ rate parameter
-            -> Gen Double
+exponential :: Monad m => Double -- ^ rate parameter
+            -> GenT m Double
 exponential l = withGen (exponentialF l)
 
 -- | Wrap a 'splitmix' PRNG function
