@@ -8,17 +8,22 @@
 {-# language LambdaCase #-}
 {-# language MultiParamTypeClasses #-}
 {-# language GeneralizedNewtypeDeriving #-}
+{-# language TemplateHaskell #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
 
 import Data.Foldable (fold)
 
 import Control.Monad.IO.Class (MonadIO(..))
+import Data.Function ((&))
 import Data.Functor.Identity (Identity(..))
 import GHC.Generics (Generic)
 
 -- deepseq
 import Control.DeepSeq (NFData(..))
+-- microlens
+import Lens.Micro (Traversal', (.~))
+import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- transformers
@@ -30,7 +35,24 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 
+-- -- lenses ty = makeLensesWith (lensRules & generateSignatures .~ False ) ty -- cannot be used in same module
 
+-- | Sparse vectors with unboxed components
+data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
+instance (VU.Unbox a, Show a) => Show (SVector a) where
+  show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
+instance NFData (SVector a)
+
+fromListSv :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
+fromListSv n ll = SV n $ VU.fromList ll
+
+-- | Dense vectors with unboxed components
+newtype DVector a = DV { dvVec :: VU.Vector a } deriving (Eq, Ord, Generic)
+instance (VU.Unbox a, Show a) => Show (DVector a) where
+  show (DV vv) = unwords ["DV", show (VU.toList vv)]
+
+fromListDv :: VU.Unbox a => [a] -> DVector a
+fromListDv ll = DV $ VU.fromList ll
 
 -- | Label a value with a unique identifier
 -- labelId
@@ -40,7 +62,9 @@ runLabelT :: (Monad m) => LabelT m a -> m a
 runLabelT = flip evalStateT 0 . unLabelT
 label :: Monad m => a -> LabelT m (Id a)
 label x = LabelT $ do { i <- get ; put (i + 1); pure (Id x i)}
-data Id a = Id { idData :: a , idLabel :: !Integer } deriving (Eq, Show)
+data Id a = Id { _idD :: a , _idL :: !Integer } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
+instance NFData a => NFData (Id a)
+makeLensesFor [("_idD", "idD")] ''Id
 instance (Eq a) => Ord (Id a) where
   Id _ u1 <= Id _ u2 = u1 <= u2
 
@@ -49,8 +73,9 @@ data RPT d a =
   _rpThreshold :: !d
   , _rpL :: !(RPT d a)
   , _rpR :: !(RPT d a) }
-  | Tip a
+  | Tip { _rpData :: a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData a) => NFData (RPT v a)
 
 -- | Random projection trees
@@ -62,7 +87,11 @@ data RPTree d a = RPTree {
   _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
   , _rpTree :: RPT d a
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
+makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData d) => NFData (RPTree d a)
+
+rpTreeData :: Traversal' (RPTree d a) a
+rpTreeData = rpTree . rpData
 
 -- | Number of tree levels
 levels :: RPTree d a -> Int
@@ -84,17 +113,13 @@ instance Inner SVector SVector where
 instance Inner SVector VU.Vector where
   inner (SV _ v1) v2 = innerSD v1 v2
   metricL2 (SV _ v1) v2 = metricSDL2 v1 v2
+instance Inner SVector DVector where
+  inner (SV _ v1) (DV v2) = innerSD v1 v2
+  metricL2 (SV _ v1) (DV v2) = metricSDL2 v1 v2
 
 
 
--- | Sparse vectors with unboxed components
-data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
-instance (VU.Unbox a, Show a) => Show (SVector a) where
-  show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
-instance NFData (SVector a)
 
-fromList :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
-fromList n ll = SV n $ VU.fromList ll
 
 -- | sparse-sparse inner product
 innerSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>

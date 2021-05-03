@@ -5,6 +5,7 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Gen where
 
+import Control.Monad (replicateM)
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Functor.Identity (Identity(..))
 import GHC.Word (Word64)
@@ -15,7 +16,7 @@ import Data.Number.Erf (InvErf(..))
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
 -- splitmix
-import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
+import System.Random.SplitMix (SMGen, mkSMGen, splitSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
@@ -25,7 +26,7 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromList)
+import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..))
 
 -- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: VU.Unbox a =>
@@ -34,6 +35,10 @@ sparse :: VU.Unbox a =>
        -> Gen a -- ^ random generator of vector components
        -> Gen (SVector a)
 sparse p sz rand = SV sz <$> sparseVG p sz rand
+
+dense :: (VG.Vector VU.Vector a) =>
+         Int -> Gen a -> Gen (DVector a)
+dense sz rand = DV <$> denseVG sz rand
 
 -- | Random generator
 --
@@ -54,10 +59,23 @@ evalGen :: Word64 -- ^ random seed
         -> a
 evalGen seed gg = evalState (unGen gg) (mkSMGen seed)
 
+-- | Sample a dense random vector
+denseVG :: (VG.Vector v a, Monad m) =>
+           Int -- ^ vector dimension
+        -> m a -> m (v a)
+denseVG sz rand = VG.unfoldrM mkf 0
+  where
+    mkf i
+      | i >= sz = pure Nothing
+      | otherwise = do
+          x <- rand
+          pure $ Just (x, succ i)
 
--- | Generate a sparse random vector
+-- | Sample a sparse random vector
 sparseVG :: (VG.Vector v (Int, a)) =>
-            Double -> Int -> Gen a -> Gen (v (Int, a))
+            Double -- ^ nonzero density
+         -> Int  -- ^ vector dimension
+         -> Gen a -> Gen (v (Int, a))
 sparseVG p sz rand = VG.unfoldrM mkf 0
   where
     mkf i
@@ -91,6 +109,20 @@ stdNormal = normal 0 1
 -- | Uniform in [0, 1)
 stdUniform :: Gen Double
 stdUniform = withGen nextDouble
+
+-- | Beta distribution, from two standard uniform samples
+beta :: Double -> Double -> Gen Double
+beta a b = go
+  where
+    go = do
+      (y1, y2) <- sample
+      if
+        y1 + y2 <= 1
+        then pure (y1 / (y1 + y2))
+        else go
+    sample = f <$> stdUniform <*> stdUniform
+      where
+        f u1 u2 = (u1 ** (1/a), u2 ** (1/b))
 
 -- | Normal distribution
 normal :: Double -- ^ mean

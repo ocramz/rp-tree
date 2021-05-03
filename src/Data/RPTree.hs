@@ -9,15 +9,19 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree (
   -- * Construction
-  build
+  tree
+  , forest
   -- * Query
   , nearest
+  -- * Validation
+  , recall
   -- * Access
   , levels, points
   -- * Types
   , RPTree
   -- *
-  , SVector, fromList
+  , SVector, fromListSv
+  , DVector, fromListDv
   -- * inner product
   , Inner(..)
     -- ** helpers for implementing Inner instances
@@ -33,7 +37,7 @@ module Data.RPTree (
   -- ** scalar distributions
   , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
   -- ** multivariate
-  , sparse
+  , sparse, dense
   ) where
 
 import Control.Monad (replicateM)
@@ -41,12 +45,14 @@ import Control.Monad.IO.Class (MonadIO(..))
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
 import Data.Functor.Identity (Identity(..))
 import Data.List (partition, sortBy)
+import Data.Monoid (Sum(..))
 import Data.Ord (comparing)
 import GHC.Generics (Generic)
 import GHC.Word (Word64)
 
 -- containers
 -- import Data.Sequence (Seq, (|>))
+import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, insertWith)
 import qualified Data.Set as S (Set, fromList, intersection)
 -- deepseq
 import Control.DeepSeq (NFData(..))
@@ -68,20 +74,62 @@ import qualified Data.Vector.Generic as VG ((!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromList)
+import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv)
 
 import Data.RPTree.Draw (draw)
 
 
+newtype Counts a = Counts {
+  unCounts :: M.Map a (Sum Int) } deriving (Eq, Show, Semigroup, Monoid)
+keepCounts :: Int -- ^ keep entry iff counts are larger than this value
+           -> Counts a
+           -> [(a, Int)]
+keepCounts thr cs = M.foldrWithKey insf mempty c
+  where
+    insf k v acc
+      | v >= thr = (k, v) : acc
+      | otherwise = acc
+    c = getSum `fmap` unCounts cs
+counts :: (Foldable t, Ord a) => t a -> Counts a
+counts = foldl count mempty
+count :: Ord a => Counts a -> a -> Counts a
+count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
--- ^ recall-at-k
-recall :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+-- | Approximate the set of points nearest to the query by voting search
+--
+-- A point is retained if it appears in more than k trees
+nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d, Ord a,
+             Foldable t) =>
+           Int -- ^ counting threshold k
+        -> [RPTree d (t a)] -- ^ forest
+        -> v d -- ^ query
+        -> [(a, Int)]
+nearest thr tts q = keepCounts thr ks
+  where
+    bkts = map (`getLeaf` q) tts
+    ks = foldMap counts bkts
+
+
+
+
+-- | average recall-at-k, computed over a set of trees
+recall :: (Inner u v, Inner SVector v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+          [RPTree a [u a]]
+       -> Int -- ^ k : number of nearest neighbors to consider
+       -> v a  -- ^ query point
+       -> Double
+recall tt k q = sum rs / fromIntegral n
+  where
+    rs = map (\t -> recall1 t k q) tt
+    n = length tt
+
+recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
           RPTree a [u a]
        -> Int -- ^ k : number of nearest neighbors to consider
        -> v a  -- ^ query point
        -> Double
-recall = recallWith metricL2
+recall1 = recallWith metricL2
 
 
 recallWith :: (Fractional a1, Inner SVector v, VU.Unbox d, Ord d, Ord a3,
@@ -92,20 +140,31 @@ recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
     xs = points tt
     dists = sortBy (comparing snd) $ map (\x -> (x, x `distf` q)) xs
     kk = S.fromList $ map fst $ take k dists
-    aa = S.fromList $ nearest tt q
+    aa = S.fromList $ getLeaf tt q
     aintk = aa `S.intersection` kk
 
+type RPForest d a = [RPTree d a]
+
+forest :: Inner SVector v =>
+          Int -- ^ # of trees
+       -> Int -- ^ maximum tree height
+       -> Double -- ^ nonzero density of sparse projection vectors
+       -> Int -- ^ dimension of projection vectors
+       -> [v Double] -- ^ dataset
+       -> Gen [RPTree Double [v Double]]
+forest nt maxDepth pnz dim xss =
+  replicateM nt (tree maxDepth pnz dim xss)
 
 -- | Build a random projection tree
 --
 -- Optimization: instead of sampling one random vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
-build :: (Inner SVector v) =>
-         Int -- ^ maximum tree depth
+tree :: (Inner SVector v) =>
+         Int -- ^ maximum tree height
       -> Double -- ^ nonzero density of sparse projection vectors
       -> Int -- ^ dimension of projection vectors
       -> [v Double] -- ^ dataset
       -> Gen (RPTree Double [v Double])
-build maxDepth pnz dim xss = do
+tree maxDepth pnz dim xss = do
   -- sample all projection vectors
   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
   let
@@ -135,11 +194,11 @@ build maxDepth pnz dim xss = do
 
 
 -- | Retrieve points nearest to the query
-nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
+getLeaf :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
            RPTree d xs
         -> v d -- ^ query point
         -> xs
-nearest (RPTree rvs tt) x = flip evalState 0 $ go tt
+getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
   where
     go (Tip xs) = pure xs
     go (Bin thr ll rr) = do
