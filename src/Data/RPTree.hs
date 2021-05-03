@@ -16,7 +16,7 @@ module Data.RPTree (
   -- * Validation
   , recall
   -- * Access
-  , levels, points
+  , levels, points, getLeaf
   -- * Types
   , RPTree
   -- *
@@ -41,6 +41,7 @@ module Data.RPTree (
   ) where
 
 import Control.Monad (replicateM)
+
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
 import Data.Functor.Identity (Identity(..))
@@ -65,17 +66,18 @@ import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
--- ulid
-import qualified Data.ULID as UU (ULID, getULID)
+-- -- ulid
+-- import qualified Data.ULID as UU (ULID, getULID)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM)
-import qualified Data.Vector.Generic as VG ((!))
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!), map, freeze, thaw, take, drop, unzip)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
+-- vector-algorithms
+import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
 import Data.RPTree.Draw (draw)
 
@@ -191,6 +193,38 @@ tree maxDepth pnz dim xss = do
           pure $ Bin thr treel treer
   (rpt, _) <- flip runStateT 0 $ loop xss
   pure $ RPTree rvs rpt
+
+tree' :: (Inner SVector v) =>
+         Int
+      -> Double
+      -> Int
+      -> V.Vector (v Double)
+      -> Gen (RPTree Double (V.Vector (v Double)))
+tree' maxDepth pnz dim xss = do
+  -- sample all projection vectors
+  rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
+  let
+    loop xs = do
+      ixLev <- get
+      if ixLev >= maxDepth || length xs <= 1
+        then
+        pure $ Tip xs
+        else
+        do
+          let
+            r = rvs VG.! ixLev
+            (thr, ll, rr) = partitionAtMedian r xs
+          put (ixLev + 1)
+          tl <- loop ll
+          tr <- loop rr
+          pure $ Bin thr tl tr
+  (rpt, _) <- flip runStateT 0 $ loop xss
+  pure $ RPTree rvs rpt
+
+
+
+
+
 
 
 -- | Retrieve points nearest to the query

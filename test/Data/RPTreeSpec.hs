@@ -5,7 +5,7 @@ import Control.Monad (replicateM)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
-import Data.RPTree (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense,  RPTree, tree, forest, nearest, levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector, fromListSv, DVector, fromListDv)
+import Data.RPTree (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense,  RPTree, tree, forest, nearest, getLeaf, levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector, fromListSv, DVector, fromListDv)
 
 spec :: Spec
 spec =

@@ -15,8 +15,10 @@ module Data.RPTree.Internal where
 import Data.Foldable (fold)
 
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.ST (runST)
 import Data.Function ((&))
 import Data.Functor.Identity (Identity(..))
+import Data.Ord (comparing)
 import GHC.Generics (Generic)
 
 -- deepseq
@@ -30,12 +32,14 @@ import Control.Monad.State (MonadState(..), modify)
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM)
-import qualified Data.Vector.Generic as VG ((!))
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
+-- vector-algorithms
+import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
--- -- lenses ty = makeLensesWith (lensRules & generateSignatures .~ False ) ty -- cannot be used in same module
+
+
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
@@ -116,10 +120,6 @@ instance Inner SVector VU.Vector where
 instance Inner SVector DVector where
   inner (SV _ v1) (DV v2) = innerSD v1 v2
   metricL2 (SV _ v1) (DV v2) = metricSDL2 v1 v2
-
-
-
-
 
 -- | sparse-sparse inner product
 innerSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
@@ -216,3 +216,23 @@ binSD f vv1 vv2 = VG.unfoldr go 0
             (il, xl) = vv1 VG.! i
             xr       = vv2 VG.! il
             y = f xl xr
+
+
+
+sortByVG :: (VG.Vector v a, Ord b) => (a -> b) -> v a -> v a
+sortByVG f v = runST $ do
+  vm <- VG.thaw v
+  V.sortBy (comparing f) vm
+  VG.freeze vm
+
+partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Num a) =>
+                     u a -- ^ projection vector
+                  -> V.Vector (v a) -- ^ dataset
+                  -> (a, V.Vector (v a), V.Vector (v a)) -- ^ median, smaller, larger
+partitionAtMedian r xs =
+  (thr, VG.take n xs', VG.drop n xs')
+  where
+    thr = inns VG.! n
+    n = VG.length xs `div` 2
+    projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs
+    (xs', inns) = VG.unzip projs
