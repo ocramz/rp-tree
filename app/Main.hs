@@ -44,7 +44,7 @@ instance Enum Pal5 where
     E -> 4
 
 tree0 :: Int -> RPTree Double (V.Vector (DVector Double))
-tree0 n = evalGen 1234 $ tree' 10 1.0 2 (dataset n)
+tree0 n = evalGen 1234 $ tree 10 1.0 2 (dataset n)
 
 dataset :: Int -> [DVector Double]
 dataset n = evalGen 1234 $ replicateM n (dense 2 $ normal 0 1)

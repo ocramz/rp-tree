@@ -12,7 +12,7 @@ df %>%
     geom_point(
         mapping = aes( x = x, y = y, color = i),
         alpha = 0.4,
-        size = 0.5
+        size = 0.2
     ) +
     theme_bw()
 

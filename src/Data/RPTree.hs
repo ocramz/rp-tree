@@ -82,7 +82,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -167,7 +167,7 @@ forest nt maxDepth pnz dim xss =
 --
 -- points are partitioned by _sampling_ a threshold uniformly between the minimum and maximum of the inner products
 --
--- Optimization: instead of sampling one random vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
+-- Optimization: instead of sampling one projection vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 tree :: (Inner SVector v) =>
          Int -- ^ maximum tree height
       -> Double -- ^ nonzero density of sparse projection vectors
@@ -248,33 +248,39 @@ getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
         else go rr
 
 
--- build maxDepth pnz dim xss = do
---   (rpt, (_, rs)) <- flip runStateT (0, mempty) $ loop xss
---   pure $ RPTree rs rpt
---   where
---     loop xs = do
---       (ixLev, rAcc) <- get
---       if ixLev >= maxDepth
---         then
---         pure $ Tip xs
---         else
---         do
---           -- sample a projection vector
---           r <- lift $ sparse pnz dim stdNormal
---           let
---             -- project the dataset
---             projs = map (\x -> (x, innerS r x)) xs
---             hi = snd $ maximumBy (comparing snd) projs
---             lo = snd $ minimumBy (comparing snd) projs
---           -- sample a threshold
---           thr <- lift $ uniformR lo hi
---           let
---             (ll, rr) = partition (\xp -> snd xp < thr) projs
---             rAcc' = rAcc |> r
---           put (ixLev + 1, rAcc')
---           tl <- loop $ map fst ll
---           tr <- loop $ map fst rr
---           pure $ Bin thr tl tr
+
+
+treeRT maxDepth minLeaf pnz dim xss = do
+  -- sample all projection vectors
+  -- rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
+  let
+    loop ixLev xs = do
+      if ixLev >= maxDepth || length xs <= minLeaf
+        then
+          pure $ RTip (V.fromList xs)
+        else
+        do
+          r <- sparse pnz dim stdNormal
+          let
+            -- project the dataset
+            projs = map (\x -> (x, r `inner` x)) xs
+            hi = snd $ maximumBy (comparing snd) projs
+            lo = snd $ minimumBy (comparing snd) projs
+          -- sample a threshold
+          thr <- uniformR lo hi
+          let
+            (ll, rr) = partition (\xp -> snd xp < thr) projs
+          treel <- loop (ixLev + 1) (map fst ll)
+          treer <- loop (ixLev + 1) (map fst rr)
+          pure $ RBin r treel treer
+  rpt <- loop 0 xss
+  pure rpt -- $ RPTree rvs rpt
+
+
+
+
+
+
 
 
 

@@ -60,21 +60,19 @@ fromListDv ll = DV $ VU.fromList ll
 toListDv :: (VU.Unbox a) => DVector a -> [a]
 toListDv (DV v) = VU.toList v
 
--- | Label a value with a unique identifier
--- labelId
-newtype LabelT m a = LabelT {unLabelT :: StateT Integer m a} deriving (Functor, Applicative, Monad, MonadState Integer, MonadIO)
-type Label = LabelT Identity
-runLabelT :: (Monad m) => LabelT m a -> m a
-runLabelT = flip evalStateT 0 . unLabelT
-label :: Monad m => a -> LabelT m (Id a)
-label x = LabelT $ do { i <- get ; put (i + 1); pure (Id x i)}
-data Id a = Id { _idD :: a , _idL :: !Integer } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
-instance NFData a => NFData (Id a)
-makeLensesFor [("_idD", "idD")] ''Id
-instance (Eq a) => Ord (Id a) where
-  Id _ u1 <= Id _ u2 = u1 <= u2
+-- | Internal
+--
+-- one projection vector per node (like @annoy@)
+data RT d a =
+  RBin (SVector d) (RT d a) (RT d a)
+  | RTip { _rData :: a } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+makeLensesFor [("_rData", "rData")] ''RT
+instance (NFData v, NFData a) => NFData (RT v a)
 
--- | Internal representation
+
+-- | Internal
+--
+-- one projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 data RPT d a =
   Bin {
   _rpThreshold :: !d
@@ -84,8 +82,6 @@ data RPT d a =
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData a) => NFData (RPT v a)
-
-
 
 -- | Random projection trees
 --
@@ -248,3 +244,19 @@ partitionAtMedian r xs =
     n = VG.length xs `div` 2
     projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs
     (xs', inns) = VG.unzip projs
+
+
+
+-- -- | Label a value with a unique identifier
+-- -- labelId
+-- newtype LabelT m a = LabelT {unLabelT :: StateT Integer m a} deriving (Functor, Applicative, Monad, MonadState Integer, MonadIO)
+-- type Label = LabelT Identity
+-- runLabelT :: (Monad m) => LabelT m a -> m a
+-- runLabelT = flip evalStateT 0 . unLabelT
+-- label :: Monad m => a -> LabelT m (Id a)
+-- label x = LabelT $ do { i <- get ; put (i + 1); pure (Id x i)}
+-- data Id a = Id { _idD :: a , _idL :: !Integer } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
+-- instance NFData a => NFData (Id a)
+-- makeLensesFor [("_idD", "idD")] ''Id
+-- instance (Eq a) => Ord (Id a) where
+--   Id _ u1 <= Id _ u2 = u1 <= u2

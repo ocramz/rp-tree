@@ -105,6 +105,13 @@ uniformR lo hi = scale <$> stdUniform
   where
     scale x = x * (hi - lo) + lo
 
+-- | Discrete uniform between two values
+uniformRI :: (Monad m, Integral i) =>
+             Integer -- ^ low
+          -> Integer -- ^ high
+          -> GenT m i
+uniformRI lo hi = fromIntegral <$> withGen (nextInteger lo hi)
+
 -- | Standard normal
 stdNormal :: Monad m => GenT m Double
 stdNormal = normal 0 1
