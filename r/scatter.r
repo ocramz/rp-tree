@@ -10,6 +10,9 @@ df
 df %>%
     ggplot( aes(x, y) ) +
     geom_point(
-        mapping = aes( x = x, y = y, color = i )
-    )
+        mapping = aes( x = x, y = y, color = i),
+        alpha = 0.4,
+        size = 0.5
+    ) +
+    theme_bw()
 

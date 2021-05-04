@@ -10,6 +10,7 @@
 module Data.RPTree (
   -- * Construction
   tree
+  , tree' 
   , forest
   -- * Query
   , nearest
@@ -73,7 +74,7 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 -- -- ulid
 -- import qualified Data.ULID as UU (ULID, getULID)
 -- vector
-import qualified Data.Vector as V (Vector, replicateM)
+import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!), map, freeze, thaw, take, drop, unzip)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
@@ -164,6 +165,8 @@ forest nt maxDepth pnz dim xss =
 
 -- | Build a random projection tree
 --
+-- points are partitioned by _sampling_ a threshold uniformly between the minimum and maximum of the inner products
+--
 -- Optimization: instead of sampling one random vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 tree :: (Inner SVector v) =>
          Int -- ^ maximum tree height
@@ -199,31 +202,28 @@ tree maxDepth pnz dim xss = do
   (rpt, _) <- flip runStateT 0 $ loop xss
   pure $ RPTree rvs rpt
 
+-- | Like 'tree' but here we partition at the median of the inner product values instead
 tree' :: (Inner SVector v) =>
          Int
       -> Double
       -> Int
-      -> V.Vector (v Double)
+      -> [v Double]
       -> Gen (RPTree Double (V.Vector (v Double)))
 tree' maxDepth pnz dim xss = do
   -- sample all projection vectors
   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
   let
-    loop xs = do
-      ixLev <- get
-      if ixLev >= maxDepth || length xs <= 1
-        then
-        pure $ Tip xs
+    loop ixLev xs =
+      if ixLev >= maxDepth || length xs <= 100
+        then Tip xs
         else
-        do
           let
             r = rvs VG.! ixLev
             (thr, ll, rr) = partitionAtMedian r xs
-          put (ixLev + 1)
-          tl <- loop ll
-          tr <- loop rr
-          pure $ Bin thr tl tr
-  (rpt, _) <- flip runStateT 0 $ loop xss
+            tl = loop (ixLev + 1) ll
+            tr = loop (ixLev + 1) rr
+          in Bin thr tl tr
+  let rpt = loop 0 (V.fromList xss)
   pure $ RPTree rvs rpt
 
 

@@ -61,6 +61,7 @@ executable rp-tree
   build-depends:       base
                      , rp-tree
                      , transformers
+                     , vector
 
 source-repository head
   type:     git
