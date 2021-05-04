@@ -18,7 +18,7 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 -- containers
-import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey)
+import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
 -- mtl
@@ -108,7 +108,7 @@ forestSink :: (Monad m, Inner SVector v) =>
               -> Double -- ^ nonzero density of projection vectors
               -> Int -- ^ dimension of projection vectors
               -> C.ConduitT () (v Double) m () -- ^ data source
-              -> m (IM.IntMap (Maybe (RPTree Double (V.Vector (v Double)))))
+              -> m (IM.IntMap (RPTree Double (V.Vector (v Double))))
 forestSink seed maxd ntrees chunksize pnz dim src = do
   let
     rvss = evalGen seed $ do
@@ -118,9 +118,12 @@ forestSink seed maxd ntrees chunksize pnz dim src = do
                        insertMultiC maxd chunksize rvss .|
                        C.last
   case tm of
-    Just ts -> flip IM.traverseWithKey ts $ \i t -> case IM.lookup i rvss of
-      Just rvs -> pure $ Just $ RPTree rvs t
-      _ -> pure Nothing
+    Just ts -> do
+      let
+        res = IM.foldlWithKey (\acc i t -> case IM.lookup i rvss of
+                                  Just rvs -> IM.insert i (RPTree rvs t) acc
+                                  Nothing -> acc) mempty ts
+      pure $ res
     _ -> pure mempty
 
 
