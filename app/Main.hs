@@ -15,7 +15,7 @@ main :: IO ()
 main = do -- putStrLn "hello!"
   let
     n = 10000
-    csvrows :: [(DVector Double, Pal3)]
+    csvrows :: [(DVector Double, Pal5)]
     csvrows = V.toList $ fold $ flip evalState A $ traverse labeled (tree0 n)
   writeCsv "r/scatter_data.csv" csvrows
 
@@ -27,8 +27,8 @@ labeled xs = do
   let n = length xs
   pure $ V.zip xs (V.replicate n i)
 
-data Pal3 = A | B | C | D | E deriving (Eq, Show)
-instance Enum Pal3 where
+data Pal5 = A | B | C | D | E deriving (Eq, Show)
+instance Enum Pal5 where
   toEnum = \case
     0 -> A
     1 -> B
@@ -44,7 +44,7 @@ instance Enum Pal3 where
     E -> 4
 
 tree0 :: Int -> RPTree Double (V.Vector (DVector Double))
-tree0 n = evalGen 1234 $ tree' 5 1.0 2 (dataset n)
+tree0 n = evalGen 1234 $ tree' 10 1.0 2 (dataset n)
 
 dataset :: Int -> [DVector Double]
 dataset n = evalGen 1234 $ replicateM n (dense 2 $ normal 0 1)

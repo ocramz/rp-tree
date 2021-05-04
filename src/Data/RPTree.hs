@@ -159,7 +159,7 @@ forest :: Inner SVector v =>
        -> Double -- ^ nonzero density of sparse projection vectors
        -> Int -- ^ dimension of projection vectors
        -> [v Double] -- ^ dataset
-       -> Gen [RPTree Double [v Double]]
+       -> Gen [RPTree Double (V.Vector (v Double))]
 forest nt maxDepth pnz dim xss =
   replicateM nt (tree maxDepth pnz dim xss)
 
@@ -173,16 +173,15 @@ tree :: (Inner SVector v) =>
       -> Double -- ^ nonzero density of sparse projection vectors
       -> Int -- ^ dimension of projection vectors
       -> [v Double] -- ^ dataset
-      -> Gen (RPTree Double [v Double])
+      -> Gen (RPTree Double (V.Vector (v Double)))
 tree maxDepth pnz dim xss = do
   -- sample all projection vectors
   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
   let
-    loop xs = do
-      ixLev <- get
-      if ixLev >= maxDepth || length xs <= 1
+    loop ixLev xs = do
+      if ixLev >= maxDepth || length xs <= 100
         then
-        pure $ Tip xs
+          pure $ Tip (V.fromList xs)
         else
         do
           let
@@ -192,14 +191,13 @@ tree maxDepth pnz dim xss = do
             hi = snd $ maximumBy (comparing snd) projs
             lo = snd $ minimumBy (comparing snd) projs
           -- sample a threshold
-          thr <- lift $ uniformR lo hi
+          thr <- uniformR lo hi
           let
             (ll, rr) = partition (\xp -> snd xp < thr) projs
-          put (ixLev + 1)
-          treel <- loop (map fst ll)
-          treer <- loop (map fst rr)
+          treel <- loop (ixLev + 1) (map fst ll)
+          treer <- loop (ixLev + 1) (map fst rr)
           pure $ Bin thr treel treer
-  (rpt, _) <- flip runStateT 0 $ loop xss
+  rpt <- loop 0 xss
   pure $ RPTree rvs rpt
 
 -- | Like 'tree' but here we partition at the median of the inner product values instead
