@@ -29,6 +29,7 @@ library
                      , containers >= 0.6.2.1
                      , deepseq >= 1.4.4.0
                      , erf >= 2.0
+                     , exceptions
                      , microlens
                      , microlens-th
                      , mtl
