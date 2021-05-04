@@ -16,7 +16,7 @@ module Data.RPTree (
   -- * Validation
   , recall
   -- * Access
-  , levels, points, getLeaf
+  , levels, points, leaves, getLeaf
   -- * Types
   , RPTree
   -- *
@@ -38,6 +38,10 @@ module Data.RPTree (
   , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
   -- ** multivariate
   , sparse, dense
+  -- * Rendering
+  , draw
+  -- * CSV
+  , writeCsv
   ) where
 
 import Control.Monad (replicateM)
@@ -77,9 +81,9 @@ import qualified Data.Vector.Storable as VS (Vector)
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
-import Data.RPTree.Draw (draw)
+import Data.RPTree.Draw (draw, writeCsv)
 
 
 newtype Counts a = Counts {
@@ -102,28 +106,29 @@ count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 --
 -- A point is retained if it appears in more than k trees
 nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d, Ord a,
-             Foldable t) =>
+             Foldable f, Functor f, Foldable t) =>
            Int -- ^ counting threshold k
-        -> [RPTree d (t a)] -- ^ forest
+        -> f (RPTree d (t a)) -- ^ forest
         -> v d -- ^ query
         -> [(a, Int)]
 nearest thr tts q = keepCounts thr ks
   where
-    bkts = map (`getLeaf` q) tts
+    bkts = fmap (`getLeaf` q) tts
     ks = foldMap counts bkts
 
 
 
 
 -- | average recall-at-k, computed over a set of trees
-recall :: (Inner u v, Inner SVector v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
-          [RPTree a [u a]]
+recall :: (Foldable t, Functor t, Inner u v, Inner SVector v,
+            VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+          t (RPTree a [u a])
        -> Int -- ^ k : number of nearest neighbors to consider
-       -> v a  -- ^ query point
+       -> v a -- ^ query point
        -> Double
 recall tt k q = sum rs / fromIntegral n
   where
-    rs = map (\t -> recall1 t k q) tt
+    rs = fmap (\t -> recall1 t k q) tt
     n = length tt
 
 recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>

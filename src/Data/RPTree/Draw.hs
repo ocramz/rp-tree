@@ -1,12 +1,40 @@
 {-# language LambdaCase #-}
+{-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Draw where
 
+import Data.List (intercalate)
 import Text.Printf (PrintfArg, printf)
 
-import Data.RPTree.Internal (RPTree(..), RPT(..))
+import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
 
 -- boxes
 import qualified Text.PrettyPrint.Boxes as B (Box, render, emptyBox, vcat, hcat, text, top, bottom, center1)
+-- bytestring
+import qualified Data.ByteString.Lazy    as LBS (ByteString, writeFile)
+import qualified Data.ByteString.Builder as BSB (Builder, toLazyByteString, string7, charUtf8)
+-- vector
+import qualified Data.Vector as V (Vector, replicateM)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!))
+import qualified Data.Vector.Unboxed as VU (Unbox)
+
+-- | Encode dataset as CSV and save into file
+writeCsv :: (Show a, Show b, VU.Unbox a) =>
+            FilePath
+         -> [(DVector a, b)] -- ^ data point, label
+         -> IO ()
+writeCsv fp ds = LBS.writeFile fp $ BSB.toLazyByteString $ toCsv ds
+
+toCsvRow :: (Show a, Show b, VU.Unbox a) =>
+            DVector a
+         -> b
+         -> BSB.Builder
+toCsvRow dv i = BSB.string7 $ intercalate "," [show x, show y, show i]
+  where
+    (x:y:_) = toListDv dv
+
+toCsv :: (Show a, Show b, VU.Unbox a) =>
+         [(DVector a, b)] -> BSB.Builder
+toCsv rs = mconcat [toCsvRow r i <> BSB.charUtf8 '\n' | (r, i) <- rs]
 
 -- | Render a tree to stdout
 --

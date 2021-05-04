@@ -24,7 +24,7 @@ import GHC.Generics (Generic)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- microlens
-import Lens.Micro (Traversal', (.~))
+import Lens.Micro (Traversal', (.~), (^..), folded)
 import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
@@ -32,7 +32,7 @@ import Control.Monad.State (MonadState(..), modify)
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
@@ -57,6 +57,8 @@ instance (VU.Unbox a, Show a) => Show (DVector a) where
 
 fromListDv :: VU.Unbox a => [a] -> DVector a
 fromListDv ll = DV $ VU.fromList ll
+toListDv :: (VU.Unbox a) => DVector a -> [a]
+toListDv (DV v) = VU.toList v
 
 -- | Label a value with a unique identifier
 -- labelId
@@ -72,6 +74,7 @@ makeLensesFor [("_idD", "idD")] ''Id
 instance (Eq a) => Ord (Id a) where
   Id _ u1 <= Id _ u2 = u1 <= u2
 
+-- | Internal representation
 data RPT d a =
   Bin {
   _rpThreshold :: !d
@@ -81,6 +84,8 @@ data RPT d a =
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData a) => NFData (RPT v a)
+
+
 
 -- | Random projection trees
 --
@@ -97,6 +102,9 @@ instance (NFData a, NFData d) => NFData (RPTree d a)
 rpTreeData :: Traversal' (RPTree d a) a
 rpTreeData = rpTree . rpData
 
+leaves :: RPTree d a -> [a]
+leaves = (^.. rpTreeData)
+
 -- | Number of tree levels
 levels :: RPTree d a -> Int
 levels (RPTree v _) = VG.length v
@@ -104,6 +112,9 @@ levels (RPTree v _) = VG.length v
 -- | Set of data points used to construct the index
 points :: Monoid m => RPTree d m -> m
 points (RPTree _ t) = fold t
+
+-- points in 2d
+data P a = P !a !a deriving (Eq, Show)
 
 -- | Inner product spaces
 --
@@ -113,13 +124,14 @@ class Inner u v where
   metricL2 :: (VU.Unbox a, Floating a) => u a -> v a -> a
 instance Inner SVector SVector where
   inner (SV _ v1) (SV _ v2) = innerSS v1 v2
-  metricL2 (SV _ v1) (SV _ v2)= metricSSL2 v1 v2
+  metricL2 (SV _ v1) (SV _ v2) = metricSSL2 v1 v2
 instance Inner SVector VU.Vector where
   inner (SV _ v1) v2 = innerSD v1 v2
   metricL2 (SV _ v1) v2 = metricSDL2 v1 v2
 instance Inner SVector DVector where
   inner (SV _ v1) (DV v2) = innerSD v1 v2
   metricL2 (SV _ v1) (DV v2) = metricSDL2 v1 v2
+
 
 -- | sparse-sparse inner product
 innerSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
