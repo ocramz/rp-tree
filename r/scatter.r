@@ -11,7 +11,7 @@ df %>%
     ggplot( aes(x, y) ) +
     geom_point(
         mapping = aes( x = x, y = y, color = i),
-        alpha = 0.4,
+        alpha = 1.0,
         size = 0.2
     ) +
     theme_bw()
