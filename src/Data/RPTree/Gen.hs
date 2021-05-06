@@ -5,28 +5,106 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Gen where
 
-import Control.Monad (replicateM)
+import Data.Foldable (foldl')
+import Control.Monad (replicateM, foldM)
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.ST (runST)
 import Data.Functor.Identity (Identity(..))
 import GHC.Word (Word64)
 
+-- containers
+import qualified Data.IntMap as IM (IntMap, insert, toList)
 -- erf
 import Data.Number.Erf (InvErf(..))
 -- mtl
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
+-- -- primitive
+-- import Control.Monad.Primitive (PrimMonad(..))
 -- splitmix
 import System.Random.SplitMix (SMGen, mkSMGen, splitSMGen, nextInt, nextInteger, nextDouble)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
-import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM)
-import qualified Data.Vector.Generic as VG ((!))
+import qualified Data.Vector as V (Vector, replicateM, length, freeze, thaw)
+import qualified Data.Vector.Mutable as VM (MVector, length, new, write)
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..))
+
+
+-- | Sample without replacement with a single pass over the data
+sample :: Foldable t =>
+          Int -- ^ sample size
+       -> t a
+       -> [a]
+sample k xs = evalGen 1234 $ do
+  (_, res) <- flip runStateT z $ foldM insf 0 xs
+  pure $ map snd $ IM.toList (rsReservoir res)
+  where
+    z = RSPartial mempty
+    insf i x = do
+      st <- get
+      case st of
+        RSPartial acc -> do
+          w <- lift $ genW k
+          s <- lift $ genS w
+          let
+            acc' = IM.insert i x acc
+            ila = i + s + 1
+            st'
+              | i >= k = RSFull acc' ila w
+              | otherwise = RSPartial acc'
+          put st'
+          pure (succ i)
+        RSFull acc ila0 w0 -> do
+          case i `compare` ila0 of
+            EQ -> do
+              w <- lift $ genW k
+              s <- lift $ genS w
+              let
+                ila = i + s + 1
+              acc' <- lift $ replaceInBuffer k acc x
+              let
+                w' = w0 * w
+              put (RSFull acc' ila w')
+              pure (succ i)
+            _ -> pure (succ i)
+
+data ResS a = RSPartial { rsReservoir :: IM.IntMap a }
+            | RSFull {
+                rsReservoir :: IM.IntMap a -- ^ reservoir
+                , rsfLookAh :: !Int -- ^ lookahead index
+                , rsfW :: !Double -- ^ W
+                } deriving (Eq, Show)
+
+genW :: (Monad m) => Int -> GenT m Double
+genW k = do
+  u <- stdUniform
+  pure $ exp (log u / fromIntegral k)
+
+genS :: (Monad m) => Double -> GenT m Int
+genS w = do
+  u <- stdUniform
+  pure $ floor (log u / log (1 - w))
+
+
+
+
+-- | Replaces a value at a random position within the buffer
+replaceInBuffer :: (Monad m) =>
+                   Int
+                -> IM.IntMap a
+                -> a
+                -> GenT m (IM.IntMap a)
+replaceInBuffer k imm y = do
+  u <- stdUniform
+  let ix = floor (fromIntegral k * u)
+  pure $ IM.insert ix y imm
+
+
 
 -- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: (Monad m, VU.Unbox a) =>

@@ -249,17 +249,22 @@ getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 
 
-
-treeRT maxDepth minLeaf pnz dim xss = do
-  -- sample all projection vectors
-  -- rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
-  let
+treeRT :: (Monad m, Inner SVector v) =>
+          Int -- ^ max tree depth
+       -> Int -- ^ min leaf size
+       -> Double -- ^ nonzero density
+       -> Int -- ^ embedding dimension
+       -> [v Double] -- ^ data
+       -> GenT m (RT Double (V.Vector (v Double)))
+treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
+  where
     loop ixLev xs = do
       if ixLev >= maxDepth || length xs <= minLeaf
         then
           pure $ RTip (V.fromList xs)
         else
         do
+          -- sample projection vector
           r <- sparse pnz dim stdNormal
           let
             -- project the dataset
@@ -273,8 +278,7 @@ treeRT maxDepth minLeaf pnz dim xss = do
           treel <- loop (ixLev + 1) (map fst ll)
           treer <- loop (ixLev + 1) (map fst rr)
           pure $ RBin r treel treer
-  rpt <- loop 0 xss
-  pure rpt -- $ RPTree rvs rpt
+
 
 
 
