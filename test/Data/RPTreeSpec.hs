@@ -16,7 +16,7 @@ spec =
         n = 100
         dim = 2
         dats = evalGen 1234 $ replicateM n (genGaussMix dim)
-        tt :: RPTree Double [DVector Double]
+        -- tt :: RPTree Double [DVector Double]
         tt = evalGen 1337 $ tree maxLevs 1.0 2 dats
       levels tt `shouldSatisfy` (<= maxLevs)
     it "nearest : counting search" $ do

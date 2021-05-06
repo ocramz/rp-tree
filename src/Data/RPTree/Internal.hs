@@ -1,6 +1,7 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE UndecidableInstances #-}
+-- {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -32,7 +33,7 @@ import Control.Monad.State (MonadState(..), modify)
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
@@ -63,11 +64,11 @@ toListDv (DV v) = VU.toList v
 -- | Internal
 --
 -- one projection vector per node (like @annoy@)
-data RT d a =
-  RBin (SVector d) (RT d a) (RT d a)
+data RT v d a =
+  RBin (v d) (RT v d a) (RT v d a)
   | RTip { _rData :: a } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 makeLensesFor [("_rData", "rData")] ''RT
-instance (NFData v, NFData a) => NFData (RT v a)
+instance (NFData (v d), NFData d, NFData a) => NFData (RT v d a)
 
 
 -- | Internal
@@ -109,24 +110,53 @@ levels (RPTree v _) = VG.length v
 points :: Monoid m => RPTree d m -> m
 points (RPTree _ t) = fold t
 
--- points in 2d
-data P a = P !a !a deriving (Eq, Show)
+-- -- points in 2d
+-- data P a = P !a !a deriving (Eq, Show)
+
+class Scale v where
+  (.*) :: (VU.Unbox a, Num a) => a -> v a -> v a
+instance Scale SVector where
+  a .* (SV n vv) = SV n $ scaleS a vv
+instance Scale VU.Vector where
+  a .* v1 = scaleD a v1
+instance Scale DVector where
+  a .* (DV v1) = DV $ scaleD a v1
 
 -- | Inner product spaces
 --
 -- This typeclass is provided as a convenience for library users to interface their own vector types.
-class Inner u v where
+class (Scale u, Scale v) => Inner u v where
   inner :: (VU.Unbox a, Num a) => u a -> v a -> a
   metricL2 :: (VU.Unbox a, Floating a) => u a -> v a -> a
+  (^+^) :: (VU.Unbox a, Num a) => u a -> v a -> u a
+  (^-^) :: (VU.Unbox a, Num a) => u a -> v a -> u a
+
 instance Inner SVector SVector where
   inner (SV _ v1) (SV _ v2) = innerSS v1 v2
   metricL2 (SV _ v1) (SV _ v2) = metricSSL2 v1 v2
+  (SV n v1) ^+^ (SV _ v2) = SV n $ sumSS v1 v2
+  (SV n v1) ^-^ (SV _ v2) = SV n $ diffSS v1 v2
 instance Inner SVector VU.Vector where
   inner (SV _ v1) v2 = innerSD v1 v2
   metricL2 (SV _ v1) v2 = metricSDL2 v1 v2
+  (SV n v1) ^+^ v2 = SV n $ sumSD v1 v2
+  (SV n v1) ^-^ v2 = SV n $ diffSD v1 v2
 instance Inner SVector DVector where
   inner (SV _ v1) (DV v2) = innerSD v1 v2
   metricL2 (SV _ v1) (DV v2) = metricSDL2 v1 v2
+  (SV n v1) ^+^ (DV v2) = SV n $ sumSD v1 v2
+  (SV n v1) ^-^ (DV v2) = SV n $ diffSD v1 v2
+instance Inner DVector DVector where
+  inner (DV v1) (DV v2) = innerDD v1 v2
+  metricL2 (DV v1) (DV v2) = metricDDL2 v1 v2
+  DV v1 ^+^ DV v2 = DV $ VG.zipWith (+) v1 v2
+  DV v1 ^-^ DV v2 = DV $ VG.zipWith (-) v1 v2
+
+(/.) :: (Scale v, VU.Unbox a, Fractional a) => v a -> a -> v a
+v /. a = (1 / a) .* v
+
+normalize :: (VU.Unbox a, Inner v v, Floating a) => v a -> v a
+normalize v = v /. metricL2 v v
 
 
 -- | sparse-sparse inner product
@@ -163,37 +193,60 @@ innerSD vv1 vv2 = go 0
           in
             (xl * xr +) $ go (succ i)
 
+innerDD :: (VG.Vector v a, Num a) => v a -> v a -> a
+innerDD v1 v2 = VG.sum $ VG.zipWith (*) v1 v2
 
 
 -- | Vector distance induced by the L2 norm (sparse-sparse)
-metricSSL2 :: (Floating a, VG.Vector v a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v (Int, a)) =>
+metricSSL2 :: (Floating a, VG.Vector u a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v (Int, a)) =>
               u (Int, a) -> v (Int, a) -> a
 metricSSL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
   where
     duv = u `diffSS` v
 
 -- | Vector distance induced by the L2 norm (sparse-dense)
-metricSDL2 :: (Floating a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v a) =>
-              u (Int, a)
-           -> v a -> a
-metricSDL2 u v = sqrt $ VG.sum $ VG.map (** 2) duv
+metricSDL2 :: (Floating a, VG.Vector v1 a, VU.Unbox a,
+                VG.Vector v1 (Int, a), VG.Vector v2 a) =>
+              v1 (Int, a) -> v2 a -> a
+metricSDL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
   where
     duv = u `diffSD` v
 
+-- | Vector distance induced by the L2 norm (dense-dense)
+metricDDL2 :: (Floating a, VG.Vector v a) => v a -> v a -> a
+metricDDL2 u v = sqrt $ VG.sum $ VG.map (** 2) duv
+  where
+    duv = VG.zipWith (-) u v
 
+scaleD :: (VG.Vector v b, Num b) => b -> v b -> v b
+scaleD a vv = VG.map (* a) vv
+
+scaleS :: (VG.Vector v (a, b), Num b) => b -> v (a, b) -> v (a, b)
+scaleS a vv = VG.map (\(i, x) -> (i, a * x)) vv
+
+-- | Vector sum
+sumSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
+         u (Int, a) -> v a -> u (Int, a)
+sumSD = binSD (-)
+
+-- | Vector sum
+sumSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
+         u (Int, a) -> v (Int, a) -> u (Int, a)
+sumSS = binSS (+) 0 
+
+-- | Vector difference
 diffSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
-          u (Int, a) -> v a -> v a
+          u (Int, a) -> v a -> u (Int, a)
 diffSD = binSD (-)
 
--- -- | Vector difference
--- (.-.) :: (VU.Unbox a, Num a) => SVector a -> SVector a -> SVector a
+-- | Vector difference
 diffSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
-          u (Int, a) -> v (Int, a) -> v (Int, a)
+          u (Int, a) -> v (Int, a) -> u (Int, a)
 diffSS = binSS (-) 0
 
 -- | Binary operation on 'SVector' s
 binSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a) =>
-         (a -> a -> a) -> a -> u (Int, a) -> v (Int, a) -> v (Int, a)
+         (a -> a -> a) -> a -> u (Int, a) -> v (Int, a) -> u (Int, a)
 binSS f z vv1 vv2 = VG.unfoldr go (0, 0)
   where
     nz1 = VG.length vv1
@@ -212,14 +265,14 @@ binSS f z vv1 vv2 = VG.unfoldr go (0, 0)
 
 
 binSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a) =>
-         (a -> a -> a) -> u (Int, a) -> v a -> v a
+         (a -> a -> a) -> u (Int, a) -> v a -> u (Int, a)
 binSD f vv1 vv2 = VG.unfoldr go 0
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
     go i
       | i >= nz1 || i >= nz2 = Nothing
-      | otherwise = Just (y, succ i)
+      | otherwise = Just ((il, y), succ i)
           where
             (il, xl) = vv1 VG.! i
             xr       = vv2 VG.! il

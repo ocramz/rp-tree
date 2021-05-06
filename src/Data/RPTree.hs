@@ -10,7 +10,8 @@
 module Data.RPTree (
   -- * Construction
   tree
-  , tree' 
+  , tree'
+  , treeRT2
   , forest
   -- * Query
   , nearest
@@ -20,6 +21,7 @@ module Data.RPTree (
   , levels, points, leaves, getLeaf
   -- * Types
   , RPTree
+  , RT
   -- *
   , SVector, fromListSv
   , DVector, fromListDv
@@ -81,7 +83,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
+import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, sampleWOR, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
 import Data.RPTree.Draw (draw, writeCsv)
@@ -225,11 +227,6 @@ tree' maxDepth pnz dim xss = do
   pure $ RPTree rvs rpt
 
 
-
-
-
-
-
 -- | Retrieve points nearest to the query
 getLeaf :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
            RPTree d xs
@@ -249,13 +246,16 @@ getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 
 
+
+-- -- 
+
 treeRT :: (Monad m, Inner SVector v) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size
        -> Double -- ^ nonzero density
        -> Int -- ^ embedding dimension
        -> [v Double] -- ^ data
-       -> GenT m (RT Double (V.Vector (v Double)))
+       -> GenT m (RT SVector Double (V.Vector (v Double)))
 treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
   where
     loop ixLev xs = do
@@ -281,6 +281,28 @@ treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
 
 
 
+
+
+treeRT2 :: (Monad f, Ord d, Inner v v, VU.Unbox d, Num d) =>
+           Int
+        -> Int
+        -> [v d]
+        -> f (RT v d [v d])
+treeRT2 maxd minl xss = loop 0 xss
+  where
+    loop ixLev xs = do
+      if ixLev >= maxd || length xs <= minl
+        then
+          pure $ RTip xs
+        else
+        do
+          let
+            (x1:x2:_) = sampleWOR 2 xs
+            r = x1 ^-^ x2
+            (ll, rr) = partition (\x -> (r `inner` x < 0)) xs
+          treel <- loop (ixLev + 1) ll
+          treer <- loop (ixLev + 1) rr
+          pure $ RBin r treel treer
 
 
 
