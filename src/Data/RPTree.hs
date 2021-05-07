@@ -84,7 +84,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, sampleWOR, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -247,8 +247,7 @@ getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
 
 
 
--- -- 
-
+-- | Partition uniformly at random between inner product extreme values
 treeRT :: (Monad m, Inner SVector v) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size
@@ -279,15 +278,37 @@ treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
           treer <- loop (ixLev + 1) (map fst rr)
           pure $ RBin r treel treer
 
+-- | Partition at median inner product
+treeRT' :: (Monad m, Inner SVector v) =>
+           Int
+        -> Int
+        -> Double
+        -> Int
+        -> V.Vector (v Double)
+        -> GenT m (RT SVector Double (V.Vector (v Double)))
+treeRT' maxDepth minLeaf pnz dim xss = loop 0 xss
+  where
+    loop ixLev xs = do
+      if ixLev >= maxDepth || length xs <= minLeaf
+        then
+          pure $ RTip xs
+        else
+        do
+          r <- sparse pnz dim stdNormal
+          let
+            (_, ll, rr) = partitionAtMedian r xs
+          treel <- loop (ixLev + 1) ll
+          treer <- loop (ixLev + 1) rr
+          pure $ RBin r treel treer
 
-
-
-
-treeRT2 :: (Monad f, Ord d, Inner v v, VU.Unbox d, Num d) =>
+-- | Partition wrt a plane _|_ to the segment connecting two points sampled at random
+--
+-- (like annoy@@)
+treeRT2 :: (Monad m, Ord d, Fractional d, Inner v v, VU.Unbox d, Num d) =>
            Int
         -> Int
         -> [v d]
-        -> f (RT v d [v d])
+        -> GenT m (RT v d [v d])
 treeRT2 maxd minl xss = loop 0 xss
   where
     loop ixLev xs = do
@@ -296,10 +317,11 @@ treeRT2 maxd minl xss = loop 0 xss
           pure $ RTip xs
         else
         do
+          x12 <- sampleWOR 2 xs
           let
-            (x1:x2:_) = sampleWOR 2 xs
+            (x1:x2:_) = x12
             r = x1 ^-^ x2
-            (ll, rr) = partition (\x -> (r `inner` x < 0)) xs
+            (ll, rr) = partition (\x -> (r `inner` (x ^-^ x1) < 0)) xs
           treel <- loop (ixLev + 1) ll
           treer <- loop (ixLev + 1) rr
           pure $ RBin r treel treer

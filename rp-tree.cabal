@@ -60,6 +60,8 @@ executable rp-tree
   hs-source-dirs:      app
   main-is:             Main.hs
   build-depends:       base
+                     , conduit
+                     , containers
                      , rp-tree
                      , transformers
                      , vector

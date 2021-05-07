@@ -280,11 +280,7 @@ binSD f vv1 vv2 = VG.unfoldr go 0
 
 
 
-sortByVG :: (VG.Vector v a, Ord b) => (a -> b) -> v a -> v a
-sortByVG f v = runST $ do
-  vm <- VG.thaw v
-  V.sortBy (comparing f) vm
-  VG.freeze vm
+
 
 partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Num a) =>
                      u a -- ^ projection vector
@@ -297,6 +293,12 @@ partitionAtMedian r xs =
     n = VG.length xs `div` 2
     projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs
     (xs', inns) = VG.unzip projs
+
+sortByVG :: (VG.Vector v a, Ord b) => (a -> b) -> v a -> v a
+sortByVG f v = runST $ do
+  vm <- VG.thaw v
+  V.sortBy (comparing f) vm
+  VG.freeze vm
 
 
 

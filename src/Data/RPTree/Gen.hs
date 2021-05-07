@@ -40,11 +40,11 @@ import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVect
 -- implements Algorithm L for reservoir sampling
 --
 -- Li, Kim-Hung (4 December 1994). "Reservoir-Sampling Algorithms of Time Complexity O(n(1+log(N/n)))". ACM Transactions on Mathematical Software. 20 (4): 481–493. doi:10.1145/198429.198435
-sampleWOR :: Foldable t =>
+sampleWOR :: (Monad m, Foldable t) =>
              Int -- ^ sample size
           -> t a
-          -> [a]
-sampleWOR k xs = evalGen 1234 $ do
+          -> GenT m [a]
+sampleWOR k xs = do
   (_, res) <- flip runStateT z $ foldM insf 0 xs
   pure $ map snd $ IM.toList (rsReservoir res)
   where

@@ -3,6 +3,13 @@
 module Main where
 
 import Data.Foldable (fold)
+-- conduit
+import qualified Data.Conduit as C (ConduitT, runConduit, yield, await)
+import Data.Conduit ((.|))
+import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
+import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
+-- containers
+import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
 -- transformers
 import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
 -- vector
@@ -10,6 +17,7 @@ import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
 import Data.RPTree (Inner(..), RPTree, tree, tree', RT, treeRT2, leaves, SVector, DVector, Gen, GenT, dense, bernoulli, normal, evalGen, evalGenT, writeCsv)
+import Data.RPTree.Conduit (treeSink, forestSink, dataSource)
 
 main :: IO ()
 main = do
@@ -68,10 +76,10 @@ tree0 :: Int -> RPTree Double (V.Vector (DVector Double))
 tree0 n = evalGen 1234 $ tree 10 1.0 2 (dataset n)
 
 tree1 :: Int -> RT DVector Double [DVector Double]
-tree1 n = evalGen 1234 $ treeRT2 10 2 (dataset n)
+tree1 n = evalGen 1234 $ treeRT2 10 20 (dataset n)
 
 dataset :: Int -> [DVector Double]
-dataset n = evalGen 1234 $ replicateM n (dense 2 $ normal 0 1)
+dataset n = evalGen 1234 $ replicateM n normal2 -- (dense 2 $ normal 0 1)
 
 normal2 :: (Monad m) => GenT m (DVector Double)
 normal2 = do
@@ -79,3 +87,13 @@ normal2 = do
   if b
     then dense 2 $ normal 0 0.5
     else dense 2 $ normal 2 0.5
+
+-- forestC0 :: Monad m =>
+--             Int
+--          -> GenT m (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
+treeC0 :: Monad m =>
+          Int -> GenT m (Maybe (RPTree Double (V.Vector (DVector Double))))
+treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
+
+srcC :: Monad m => Int -> C.ConduitT i (DVector Double) (GenT m) ()
+srcC n = dataSource n normal2

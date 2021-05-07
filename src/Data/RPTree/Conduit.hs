@@ -4,7 +4,7 @@
 module Data.RPTree.Conduit (
   treeSink, forestSink
   -- ** helpers
-  , syntheticData
+  , dataSource
   ) where
 
 import Control.Exception (Exception(..))
@@ -35,20 +35,15 @@ import qualified Data.Vector.Storable as VS (Vector)
 import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
 
-normal2 :: (Monad m) => GenT m (DVector Double)
-normal2 = do
-  b <- bernoulli 0.2
-  if b
-    then dense 2 $ normal 0 0.1
-    else dense 2 $ normal 10 0.1
+
 
 
 -- | Source of random data points
-syntheticData :: (Monad m) =>
-                 Int -- ^ number of vectors to generate
-              -> GenT m a -- ^ random generator for the vector components
-              -> C.ConduitT i a (GenT m) ()
-syntheticData n gg = flip C.unfoldM 0 $ \i -> do
+dataSource :: (Monad m) =>
+              Int -- ^ number of vectors to generate
+           -> GenT m a -- ^ random generator for the vector components
+           -> C.ConduitT i a (GenT m) ()
+dataSource n gg = flip C.unfoldM 0 $ \i -> do
   if i == n
     then pure Nothing
     else do
@@ -67,26 +62,30 @@ syntheticData n gg = flip C.unfoldM 0 $ \i -> do
 treeSink :: (Monad m, Inner SVector v) =>
             Word64 -- ^ random seed
          -> Int -- ^ max tree depth
+         -> Int -- ^ min leaf size
          -> Int -- ^ data chunk size
          -> Double -- ^ nonzero density of projection vectors
          -> Int -- ^ dimension of projection vectors
          -> C.ConduitT () (v Double) m () -- ^ data source
          -> m (Maybe (RPTree Double (V.Vector (v Double))))
-treeSink seed maxDepth n pnz dim src = do
+treeSink seed maxDepth minLeaf n pnz dim src = do
   let
     rvs = evalGen seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
-  tm <- C.runConduit $ src .| insertC maxDepth n rvs .| C.last
+  tm <- C.runConduit $ src .|
+                       insertC maxDepth minLeaf n rvs .|
+                       C.last
   case tm of
     Just t -> pure $ Just $ RPTree rvs t
     _ -> pure Nothing
 
 -- | Incrementally build a tree
 insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Num d) =>
-          Int -- ^ max tree depth
-       -> Int -- ^ data chunk size
-       -> V.Vector (u d) -- ^ random projection vectors
-       -> C.ConduitT (v d) (RPT d (V.Vector (v d))) m ()
-insertC maxDepth n rvs = chunked n z (insert maxDepth rvs)
+           Int -- ^ max tree depth
+        -> Int -- ^ min leaf size
+        -> Int -- ^ data chunk size
+        -> V.Vector (u d) -- ^ random projection vectors
+        -> C.ConduitT (v d) (RPT d (V.Vector (v d))) m ()
+insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
   where
     z = Tip mempty
 
@@ -103,19 +102,20 @@ insertC maxDepth n rvs = chunked n z (insert maxDepth rvs)
 forestSink :: (Monad m, Inner SVector v) =>
                  Word64 -- ^ random seed
               -> Int -- ^ max tree depth
+              -> Int -- ^ min leaf size
               -> Int -- ^ number of trees
               -> Int -- ^ data chunk size
               -> Double -- ^ nonzero density of projection vectors
               -> Int -- ^ dimension of projection vectors
               -> C.ConduitT () (v Double) m () -- ^ data source
               -> m (IM.IntMap (RPTree Double (V.Vector (v Double))))
-forestSink seed maxd ntrees chunksize pnz dim src = do
+forestSink seed maxd minl ntrees chunksize pnz dim src = do
   let
     rvss = evalGen seed $ do
       rvs <- replicateM ntrees $ V.replicateM maxd (sparse pnz dim stdNormal)
       pure $ IM.fromList $ zip [0 .. ] rvs
   tm <- C.runConduit $ src .|
-                       insertMultiC maxd chunksize rvss .|
+                       insertMultiC maxd minl chunksize rvss .|
                        C.last
   case tm of
     Just ts -> do
@@ -128,35 +128,38 @@ forestSink seed maxd ntrees chunksize pnz dim src = do
 
 
 insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d)) =>
-                Int
-             -> Int
+                Int  -- ^ max tree depth
+             -> Int -- ^ min leaf size
+             -> Int -- ^ chunk size
              -> IM.IntMap (v1 (u d)) -- one entry per tree
              -> C.ConduitT
                 (v d)
                 (IM.IntMap (RPT d (V.Vector (v d))))
                 m
                 ()
-insertMultiC maxd n rvss = chunked n mempty (insertMulti maxd rvss)
+insertMultiC maxd minl n rvss = chunked n mempty (insertMulti maxd minl rvss)
 
 
 insertMulti :: (Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d)) =>
                Int
+            -> Int
             -> IM.IntMap (v1 (u d))
             -> IM.IntMap (RPT d (V.Vector (v d)))
             -> V.Vector (v d)
             -> IM.IntMap (RPT d (V.Vector (v d)))
-insertMulti maxd rvss tacc xs =
+insertMulti maxd minl rvss tacc xs =
   flip IM.mapWithKey tacc $ \i t -> case IM.lookup i rvss of
-                                      Just rvs -> insert maxd rvs t xs
+                                      Just rvs -> insert maxd minl rvs t xs
                                       _        -> t
 
 insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Num d) =>
-          Int
+          Int -- ^ max tree depth
+       -> Int -- ^ min leaf size
        -> v1 (u d) -- ^ projection vectors
        -> RPT d (V.Vector (v d)) -- ^ accumulator
        -> V.Vector (v d) -- ^ data chunk
        -> RPT d (V.Vector (v d))
-insert maxDepth rvs = loop 0
+insert maxDepth minLeaf rvs = loop 0
   where
     z = Tip mempty
     loop ixLev tt xs =
@@ -166,8 +169,8 @@ insert maxDepth rvs = loop 0
         case tt of
 
           b@(Bin thr tl0 tr0) ->
-            if ixLev >= maxDepth || null xs
-              then b -- do nothing
+            if ixLev >= maxDepth || length xs <= minLeaf
+              then b -- return current subtree
               else
                 let
                   (_, ll, rr) = partitionAtMedian r xs -- ignore new threshold (?)
