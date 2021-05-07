@@ -95,5 +95,13 @@ treeC0 :: Monad m =>
           Int -> GenT m (Maybe (RPTree Double (V.Vector (DVector Double))))
 treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
 
+forestC0 :: Monad m =>
+            Int
+         -> GenT
+         m
+         (Either
+           String (IM.IntMap (RPTree Double (V.Vector (DVector Double)))))
+forestC0 n = forestSink 1234 10 20 10 100 1.0 2 (srcC n)
+
 srcC :: Monad m => Int -> C.ConduitT i (DVector Double) (GenT m) ()
 srcC n = dataSource n normal2

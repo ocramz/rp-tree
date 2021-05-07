@@ -108,7 +108,7 @@ forestSink :: (Monad m, Inner SVector v) =>
               -> Double -- ^ nonzero density of projection vectors
               -> Int -- ^ dimension of projection vectors
               -> C.ConduitT () (v Double) m () -- ^ data source
-              -> m (IM.IntMap (RPTree Double (V.Vector (v Double))))
+              -> m (Either String (IM.IntMap (RPTree Double (V.Vector (v Double)))))
 forestSink seed maxd minl ntrees chunksize pnz dim src = do
   let
     rvss = evalGen seed $ do
@@ -123,8 +123,8 @@ forestSink seed maxd minl ntrees chunksize pnz dim src = do
         res = IM.foldlWithKey (\acc i t -> case IM.lookup i rvss of
                                   Just rvs -> IM.insert i (RPTree rvs t) acc
                                   Nothing -> acc) mempty ts
-      pure $ res
-    _ -> pure mempty
+      pure $ Right res
+    _ -> pure $ Left "forestSink : no results"
 
 
 insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d)) =>
