@@ -20,7 +20,7 @@ import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (Inner(..), RPTree, RPT, RT, leaves, SVector, DVector, dense, writeCsv)
+import Data.RPTree (knn, Inner(..), RPTree, RPT, RT, leaves, SVector, DVector, dense, writeCsv)
 import Data.RPTree.Conduit (forest, dataSource)
 
 main :: IO ()
@@ -85,15 +85,6 @@ instance Enum Pal5 where
 dataset :: Int -> V.Vector (DVector Double)
 dataset n = V.fromList $ sample 1234 $ replicateM n (dense 2 $ normal 0 1)
 
-normal2 :: (Monad m) => GenT m (DVector Double)
-normal2 = do
-  b <- bernoulli 0.5
-  if b
-    then dense 2 $ normal 0 0.5
-    else dense 2 $ normal 2 0.5
-
-
--- conduit
 
 -- treeC0 :: MonadThrow m =>
 --           Int -> GenT m (RPTree Double (V.Vector (DVector Double)))
@@ -102,12 +93,16 @@ normal2 = do
 forestC0 :: MonadThrow m =>
             Int
          -> GenT
-         m
-         (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
+            m
+            (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
 forestC0 n = forest 1234 10 20 10 100 1.0 2 (srcC n)
-
-
-
 
 srcC :: Monad m => Int -> C.ConduitT i (DVector Double) (GenT m) ()
 srcC n = dataSource n normal2
+
+normal2 :: (Monad m) => GenT m (DVector Double)
+normal2 = do
+  b <- bernoulli 0.5
+  if b
+    then dense 2 $ normal 0 0.5
+    else dense 2 $ normal 2 0.5

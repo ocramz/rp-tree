@@ -35,6 +35,8 @@ import Lens.Micro (Traversal', (.~), (^..), folded)
 import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
+-- serialise
+import Codec.Serialise (Serialise(..))
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
@@ -60,6 +62,7 @@ data Margin a = Margin {
   cMarginLow :: Max a -- ^ lower bound on the cut point
   , cMarginHigh :: Min a -- ^ upper bound
                    } deriving (Eq, Show, Generic)
+instance (Serialise a) => Serialise (Margin a)
 getMargin :: Margin a -> (a, a)
 getMargin (Margin ml mh) = (getMax ml, getMin mh)
 instance (NFData a) => NFData (Margin a)
@@ -70,6 +73,7 @@ instance (Ord a) => Semigroup (Margin a) where
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
+instance (VU.Unbox a, Serialise a) => Serialise (SVector a)
 instance (VU.Unbox a, Show a) => Show (SVector a) where
   show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
 instance NFData (SVector a)
@@ -79,6 +83,7 @@ fromListSv n ll = SV n $ VU.fromList ll
 
 -- | Dense vectors with unboxed components
 newtype DVector a = DV { dvVec :: VU.Vector a } deriving (Eq, Ord, Generic)
+instance (VU.Unbox a, Serialise a) => Serialise (DVector a)
 instance (VU.Unbox a, Show a) => Show (DVector a) where
   show (DV vv) = unwords ["DV", show (VU.toList vv)]
 
@@ -109,6 +114,7 @@ data RPT d a =
   , _rpR :: !(RPT d a) }
   | Tip { _rpData :: a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+instance (Serialise a, Serialise d) => Serialise (RPT d a)
 makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData a) => NFData (RPT v a)
 
@@ -117,10 +123,13 @@ instance (NFData v, NFData a) => NFData (RPT v a)
 -- The first type parameter corresponds to a floating point scalar value, the second is the type of the data collected at the leaves of the tree (e.g. lists of vectors)
 --
 -- We keep them separate to leverage the Functor instance for postprocessing and visualization
+--
+-- One projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 data RPTree d a = RPTree {
   _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
   , _rpTree :: RPT d a
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
+instance (Serialise d, Serialise a, VU.Unbox d) => Serialise (RPTree d a)
 makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData d) => NFData (RPTree d a)
 
