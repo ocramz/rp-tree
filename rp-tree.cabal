@@ -54,6 +54,7 @@ test-suite spec
                      , rp-tree
                      , hspec
                      , QuickCheck
+                     , splitmix-distributions
 
 executable rp-tree
   default-language:    Haskell2010
