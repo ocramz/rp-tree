@@ -3,7 +3,7 @@
 {-# options_ghc -Wno-unused-imports #-}
 
 module Data.RPTree.Conduit (
-  treeSink, forestSink
+  forest
   -- ** helpers
   , dataSource
   ) where
@@ -34,7 +34,7 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
 
 
 
@@ -60,7 +60,9 @@ dataSource n gg = flip C.unfoldM 0 $ \i -> do
 -- * stationary : each chunk is representative of the whole dataset
 --
 -- * bounded : we wait until the end of the stream to produce a result
-treeSink :: (Monad m, Inner SVector v) =>
+--
+-- Throws 'EmptyResult' if the conduit is empty
+tree :: (MonadThrow m, Inner SVector v) =>
             Word64 -- ^ random seed
          -> Int -- ^ max tree depth
          -> Int -- ^ min leaf size
@@ -68,16 +70,16 @@ treeSink :: (Monad m, Inner SVector v) =>
          -> Double -- ^ nonzero density of projection vectors
          -> Int -- ^ dimension of projection vectors
          -> C.ConduitT () (v Double) m () -- ^ data source
-         -> m (Maybe (RPTree Double (V.Vector (v Double))))
-treeSink seed maxDepth minLeaf n pnz dim src = do
+         -> m (RPTree Double (V.Vector (v Double)))
+tree seed maxDepth minLeaf n pnz dim src = do
   let
     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
   tm <- C.runConduit $ src .|
                        insertC maxDepth minLeaf n rvs .|
                        C.last
   case tm of
-    Just t -> pure $ Just $ RPTree rvs t
-    _ -> pure Nothing
+    Just t -> pure $ RPTree rvs t
+    _ -> throwM $ EmptyResult "treeSink"
 
 -- | Incrementally build a tree
 insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
@@ -103,7 +105,7 @@ insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
 -- * bounded : we wait until the end of the stream to produce a result
 --
 -- Throws 'EmptyResult' if the conduit is empty
-forestSink :: (MonadThrow m, Inner SVector v) =>
+forest :: (MonadThrow m, Inner SVector v) =>
                  Word64 -- ^ random seed
               -> Int -- ^ max tree depth
               -> Int -- ^ min leaf size
@@ -112,8 +114,8 @@ forestSink :: (MonadThrow m, Inner SVector v) =>
               -> Double -- ^ nonzero density of projection vectors
               -> Int -- ^ dimension of projection vectors
               -> C.ConduitT () (v Double) m () -- ^ data source
-              -> m (IM.IntMap (RPTree Double (V.Vector (v Double))))
-forestSink seed maxd minl ntrees chunksize pnz dim src = do
+              -> m (RPForest Double (V.Vector (v Double)))
+forest seed maxd minl ntrees chunksize pnz dim src = do
   let
     rvss = sample seed $ do
       rvs <- replicateM ntrees $ V.replicateM maxd (sparse pnz dim stdNormal)

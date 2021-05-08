@@ -5,17 +5,22 @@ module Data.RPTree.Draw where
 import Data.List (intercalate)
 import Text.Printf (PrintfArg, printf)
 
-import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
-
 -- boxes
 import qualified Text.PrettyPrint.Boxes as B (Box, render, emptyBox, vcat, hcat, text, top, bottom, center1)
 -- bytestring
 import qualified Data.ByteString.Lazy    as LBS (ByteString, writeFile)
 import qualified Data.ByteString.Builder as BSB (Builder, toLazyByteString, string7, charUtf8)
+-- -- mtl
+-- import Control.Monad.State (MonadState(..))
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
 import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!))
 import qualified Data.Vector.Unboxed as VU (Unbox)
+
+import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
+
+
+
 
 -- | Encode dataset as CSV and save into file
 writeCsv :: (Show a, Show b, VU.Unbox a) =>

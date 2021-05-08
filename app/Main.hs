@@ -21,7 +21,7 @@ import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
 import Data.RPTree (Inner(..), RPTree, RPT, RT, leaves, SVector, DVector, dense, writeCsv)
-import Data.RPTree.Conduit (treeSink, forestSink, dataSource)
+import Data.RPTree.Conduit (forest, dataSource)
 
 main :: IO ()
 main = do
@@ -95,16 +95,16 @@ normal2 = do
 
 -- conduit
 
-treeC0 :: Monad m =>
-          Int -> GenT m (Maybe (RPTree Double (V.Vector (DVector Double))))
-treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
+-- treeC0 :: MonadThrow m =>
+--           Int -> GenT m (RPTree Double (V.Vector (DVector Double)))
+-- treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
 
 forestC0 :: MonadThrow m =>
             Int
          -> GenT
          m
          (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
-forestC0 n = forestSink 1234 10 20 10 100 1.0 2 (srcC n)
+forestC0 n = forest 1234 10 20 10 100 1.0 2 (srcC n)
 
 
 

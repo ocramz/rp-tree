@@ -6,23 +6,22 @@
 {-# language LambdaCase #-}
 {-# language GeneralizedNewtypeDeriving #-}
 -- {-# language MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# options_ghc -Wno-unused-imports #-}
 {-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree (
   -- * Construction
-  -- tree
-  -- , tree'
-  -- , treeRT
-  -- , forest
-  -- -- * Query
+  forest
+  -- * Query
+  , knn
   -- , nearest
-  -- -- * Validation
-  -- , recall
+  -- * Validation
+  , recall
   -- * Access
-    levels, points, leaves, getLeaf
+  , levels, points, leaves, getLeaf
   -- * Types
   -- ** RPTree
-  , RPTree
+  , RPTree, RPForest
   -- *** internal
   , RPT
   -- ** RT
@@ -32,19 +31,13 @@ module Data.RPTree (
   , DVector, fromListDv
   -- * inner product
   , Inner(..)
-    -- ** helpers for implementing Inner instances
-    -- *** inner product
-  , innerSS, innerSD
-    -- *** L2 distance
-  , metricSSL2, metricSDL2
-  -- -- * Random generation
-  -- -- ** pure
-  -- , Gen, evalGen
-  -- -- ** monadic
-  -- , GenT, evalGenT
-  -- -- ** scalar distributions
-  -- , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
-  -- ** multivariate
+  --   -- ** helpers for implementing Inner instances
+  --   -- *** inner product
+  -- , innerSS, innerSD
+  --   -- *** L2 distance
+  -- , metricSSL2, metricSDL2
+  -- * Random generation
+  -- ** vector
   , sparse, dense
   -- * Rendering
   , draw
@@ -66,20 +59,16 @@ import GHC.Word (Word64)
 -- containers
 -- import Data.Sequence (Seq, (|>))
 import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, insertWith)
-import qualified Data.Set as S (Set, fromList, intersection)
+import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
 import Control.DeepSeq (NFData(..))
--- erf
-import Data.Number.Erf (InvErf(..))
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
--- splitmix
-import System.Random.SplitMix (SMGen, mkSMGen, nextInt, nextInteger, nextDouble)
+-- psqueues
+import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
--- -- ulid
--- import qualified Data.ULID as UU (ULID, getULID)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!), map, freeze, thaw, take, drop, unzip)
@@ -88,8 +77,9 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
+import Data.RPTree.Conduit (forest, dataSource)
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin)
 
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -110,72 +100,93 @@ counts = foldl count mempty
 count :: Ord a => Counts a -> a -> Counts a
 count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
--- -- | Approximate the set of points nearest to the query by voting search
--- --
--- -- A point is retained if it appears in more than k trees
--- nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d, Ord a,
---              Foldable f, Functor f, Foldable t) =>
---            Int -- ^ counting threshold k
---         -> f (RPTree d (t a)) -- ^ forest
---         -> v d -- ^ query
---         -> [(a, Int)]
--- nearest thr tts q = keepCounts thr ks
---   where
---     bkts = fmap (`getLeaf` q) tts
---     ks = foldMap counts bkts
+
+-- | k nearest neighbors
+knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d,
+         Semigroup (t v2), Ord v2, Foldable t) =>
+       (v2 -> v d -> p) -- ^ distance function
+    -> Int -- ^ k neighbors
+    -> Int -- ^ voting threshold
+    -> RPForest d (t v2) -- ^ forest
+    -> v d -- ^ query
+    -> PQ.IntPSQ p v2
+knn distf k thr tts q = PQ.fromList $ zipWith (\i x -> (i, x `distf` q, x) ) [0 ..] candidates
+  where
+    candidates = map fst $ take k $ nearest thr tts q
+
+-- | Approximate the set of points nearest to the query by voting search
+--
+-- A point is retained if it appears in more than k trees
+nearest :: (Inner SVector v, VU.Unbox d, Real d,
+             Semigroup (t a), Ord a, Foldable t) =>
+           Int -- ^ counting threshold k
+        -> RPForest d (t a) -- ^ forest
+        -> v d -- ^ query
+        -> [(a, Int)]
+nearest thr tts q = keepCounts thr ks
+  where
+    bkts = fmap (`getLeaf` q) tts
+    ks = foldMap counts bkts
 
 
+-- | average recall-at-k, computed over a set of trees
+recall :: (Monoid (t2 (u a)), Foldable t2, 
+            Functor t2, Inner u v, Inner SVector v, VU.Unbox a, Ord a,
+            Ord (u a), Floating a) =>
+          RPForest a (t2 (u a))
+       -> Int -- ^ k : number of nearest neighbors to consider
+       -> v a -- ^ query point
+       -> Double
+recall tt k q = sum rs / fromIntegral n
+  where
+    rs = fmap (\t -> recall1 t k q) tt
+    n = length tt
+
+recall1 :: (Monoid (t (u a)), Foldable t, Functor t, Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+          RPTree a (t (u a))
+       -> Int -- ^ k : number of nearest neighbors to consider
+       -> v a  -- ^ query point
+       -> Double
+recall1 = recallWith metricL2
+
+recallWith :: (Fractional a1, Inner SVector v, Ord d, VU.Unbox d,
+                Num d, Monoid (t a2), Ord a3, Foldable t, Functor t, Ord a2) =>
+              (a2 -> v d -> a3) -> RPTree d (t a2) -> Int -> v d -> a1
+recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
+  where
+    xs = points tt
+    dists = sortBy (comparing snd) $ toList $ fmap (\x -> (x, x `distf` q)) xs
+    kk = S.fromList $ map fst $ take k dists
+    aa = set $ getLeaf tt q
+    aintk = aa `S.intersection` kk
+
+set :: (Foldable t, Ord a) => t a -> S.Set a
+set = foldl (flip S.insert) mempty
 
 
--- -- | average recall-at-k, computed over a set of trees
--- recall :: (Foldable t, Functor t, Inner u v, Inner SVector v,
---             VU.Unbox a, Ord a, Ord (u a), Floating a) =>
---           t (RPTree a [u a])
---        -> Int -- ^ k : number of nearest neighbors to consider
---        -> v a -- ^ query point
---        -> Double
--- recall tt k q = sum rs / fromIntegral n
---   where
---     rs = fmap (\t -> recall1 t k q) tt
---     n = length tt
-
--- recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
---           RPTree a [u a]
---        -> Int -- ^ k : number of nearest neighbors to consider
---        -> v a  -- ^ query point
---        -> Double
--- recall1 = recallWith metricL2
-
-
--- recallWith :: (Fractional a1, Inner SVector v, VU.Unbox d, Ord d, Ord a3,
---                Ord a2, Num d) =>
---               (a2 -> v d -> a3) -> RPTree d [a2] -> Int -> v d -> a1
--- recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
---   where
---     xs = points tt
---     dists = sortBy (comparing snd) $ map (\x -> (x, x `distf` q)) xs
---     kk = S.fromList $ map fst $ take k dists
---     aa = S.fromList $ getLeaf tt q
---     aintk = aa `S.intersection` kk
-
--- type RPForest d a = [RPTree d a]
 
 -- | Retrieve points nearest to the query
--- getLeaf :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
---            RPTree d xs
---         -> v d -- ^ query point
---         -> xs
+--
+-- in case of a narrow margin, collect both branches of the tree
+getLeaf :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
+           RPTree d xs
+        -> v d -- ^ query point
+        -> xs
 getLeaf (RPTree rvs tt) x = go 0 tt
   where
-    go _     (Tip xs)               = xs
+    go _     (Tip xs)                     = xs
     go ixLev (Bin thr margin ltree rtree) = do
       let
-        (mgl, mgh) = getMargin margin
+        (mglo, mghi) = getMargin margin
         r = rvs VG.! ixLev
         proj = r `inner` x
-      if r `inner` x < thr
-        then go (ixLev + 1) ltree
-        else go (ixLev + 1) rtree
+        i' = succ ixLev
+      if | proj < thr &&
+           mglo > mghi -> go i' ltree <> go i' rtree
+         | proj < thr  -> go i' ltree
+         | proj > thr &&
+           mglo < mghi -> go i' ltree <> go i' rtree
+         | otherwise   -> go i' rtree
 
 
 

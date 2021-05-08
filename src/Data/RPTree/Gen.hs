@@ -5,36 +5,23 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Gen where
 
-import Data.Foldable (foldl')
 import Control.Monad (replicateM, foldM)
-import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.ST (runST)
-import Data.Functor.Identity (Identity(..))
-import GHC.Word (Word64)
 
 -- containers
 import qualified Data.IntMap as IM (IntMap, insert, toList)
--- erf
-import Data.Number.Erf (InvErf(..))
--- exceptions
-import Control.Monad.Catch (MonadThrow(..))
 -- mtl
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
--- -- primitive
--- import Control.Monad.Primitive (PrimMonad(..))
--- -- splitmix
--- import System.Random.SplitMix (SMGen, mkSMGen, splitSMGen, nextInt, nextInteger, nextDouble)
 -- splitmix-distribitions
 import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
-import qualified Data.Vector as V (Vector, replicateM, length, freeze, thaw)
-import qualified Data.Vector.Mutable as VM (MVector, length, new, write)
+
+
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
-import qualified Data.Vector.Storable as VS (Vector)
+
 
 import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..))
 

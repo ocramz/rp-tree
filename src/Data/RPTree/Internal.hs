@@ -13,18 +13,21 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
 
-import Data.Foldable (fold, foldl')
 import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.ST (runST)
 import Data.Function ((&))
+import Data.Foldable (fold, foldl')
 import Data.Functor.Identity (Identity(..))
+import Data.List (nub)
 import Data.Monoid (Sum(..))
 import Data.Ord (comparing)
 import Data.Semigroup (Min(..), Max(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
+-- containers
+import qualified Data.IntMap as IM (IntMap)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- microlens
@@ -41,6 +44,7 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
+
 
 -- | Exceptions
 data RPTError =
@@ -119,6 +123,8 @@ data RPTree d a = RPTree {
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData d) => NFData (RPTree d a)
+
+type RPForest d a = IM.IntMap (RPTree d a)
 
 rpTreeData :: Traversal' (RPTree d a) a
 rpTreeData = rpTree . rpData

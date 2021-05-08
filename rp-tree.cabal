@@ -29,16 +29,14 @@ library
                      , conduit
                      , containers >= 0.6.2.1
                      , deepseq >= 1.4.4.0
-                     , erf >= 2.0
                      , exceptions
                      , microlens
                      , microlens-th
                      , mtl
-                     -- , primitive
-                     , splitmix >= 0.1.0.3
+                     , psqueues
                      , splitmix-distributions >= 0.8
                      , transformers
-                     , ulid
+                     -- , ulid
                      , vector >= 0.12.1.2
                      , vector-algorithms
                        -- debug
