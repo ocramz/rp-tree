@@ -136,10 +136,9 @@ pqSeq pqq = go pqq mempty
 
 
 -- | average recall-at-k, computed over a set of trees
-recall :: (Monoid (t2 (u a)), Foldable t2, 
-            Functor t2, Inner u v, Inner SVector v, VU.Unbox a, Ord a,
+recall :: (Inner u v, Inner SVector v, VU.Unbox a, Ord a,
             Ord (u a), Floating a) =>
-          RPForest a (t2 (u a))
+          RPForest a (V.Vector (u a))
        -> Int -- ^ k : number of nearest neighbors to consider
        -> v a -- ^ query point
        -> Double
@@ -148,16 +147,16 @@ recall tt k q = sum rs / fromIntegral n
     rs = fmap (\t -> recall1 t k q) tt
     n = length tt
 
-recall1 :: (Monoid (t (u a)), Foldable t, Functor t, Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
-          RPTree a (t (u a))
+recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+          RPTree a (V.Vector (u a))
        -> Int -- ^ k : number of nearest neighbors to consider
        -> v a  -- ^ query point
        -> Double
 recall1 = recallWith metricL2
 
 recallWith :: (Fractional a1, Inner SVector v, Ord d, VU.Unbox d,
-                Num d, Monoid (t a2), Ord a3, Foldable t, Functor t, Ord a2) =>
-              (a2 -> v d -> a3) -> RPTree d (t a2) -> Int -> v d -> a1
+                Num d, Ord a3, Ord a2) =>
+              (a2 -> v d -> a3) -> RPTree d (V.Vector a2) -> Int -> v d -> a1
 recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
   where
     xs = points tt
