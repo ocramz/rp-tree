@@ -101,14 +101,13 @@ count :: Ord a => Counts a -> a -> Counts a
 count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
 
--- -- | k nearest neighbors
-knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d, Ord v2) =>
+-- | k nearest neighbors
+knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
        (v2 -> v d -> p) -- ^ distance function
     -> Int -- ^ k neighbors
-
-    -> RPForest d (V.Vector v2) -- ^ forest
-    -> v d -- ^ query
-    -> V.Vector (p, v2) -- ^ ordered
+    -> RPForest d (V.Vector v2) -- ^ random projection forest
+    -> v d -- ^ query point
+    -> V.Vector (p, v2) -- ^ ordered in increasing distance order
 knn distf k tts q = sortByVG fst cs
   where
     cs = VG.map (\x -> (x `distf` q, x)) $ VG.take k $ fold $ (`candidates` q) <$> tts
