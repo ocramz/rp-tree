@@ -13,13 +13,16 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
 
-import Data.Foldable (fold)
-
+import Data.Foldable (fold, foldl')
+import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.ST (runST)
 import Data.Function ((&))
 import Data.Functor.Identity (Identity(..))
+import Data.Monoid (Sum(..))
 import Data.Ord (comparing)
+import Data.Semigroup (Min(..), Max(..))
+import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 -- deepseq
@@ -32,14 +35,33 @@ import Control.Monad.State (MonadState(..), modify)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
-import qualified Data.Vector as V (Vector, replicateM)
-import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith)
+import qualified Data.Vector as V (Vector, replicateM, fromList)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith, last, head)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
+-- | Exceptions
+data RPTError =
+  EmptyResult String
+  deriving (Eq, Typeable)
+instance Show RPTError where
+  show = \case
+    EmptyResult str -> unwords [str, ": empty result"]
+instance Exception RPTError
 
+-- | Bounds around the cutting plane
+data Margin a = Margin {
+  cMarginLow :: Max a -- ^ lower bound on the cut point
+  , cMarginHigh :: Min a -- ^ upper bound
+                   } deriving (Eq, Show, Generic)
+getMargin :: Margin a -> (a, a)
+getMargin (Margin ml mh) = (getMax ml, getMin mh)
+instance (NFData a) => NFData (Margin a)
+-- | Used for updating in a streaming setting
+instance (Ord a) => Semigroup (Margin a) where
+  Margin lo1 hi1 <> Margin lo2 hi2 = Margin (lo1 <> lo2) (hi1 <> hi2)
 
 
 -- | Sparse vectors with unboxed components
@@ -65,10 +87,11 @@ toListDv (DV v) = VU.toList v
 --
 -- one projection vector per node (like @annoy@)
 data RT v d a =
-  RBin (v d) (RT v d a) (RT v d a)
-  | RTip { _rData :: a } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+  RBin !d !(v d) !(RT v d a) !(RT v d a)
+  | RTip { _rData :: !a } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 makeLensesFor [("_rData", "rData")] ''RT
 instance (NFData (v d), NFData d, NFData a) => NFData (RT v d a)
+
 
 
 -- | Internal
@@ -77,6 +100,7 @@ instance (NFData (v d), NFData d, NFData a) => NFData (RT v d a)
 data RPT d a =
   Bin {
   _rpThreshold :: !d
+  , _rpMargin :: !(Margin d)
   , _rpL :: !(RPT d a)
   , _rpR :: !(RPT d a) }
   | Tip { _rpData :: a }
@@ -279,18 +303,22 @@ binSD f vv1 vv2 = VG.unfoldr go 0
             y = f xl xr
 
 
-
-
-
-partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Num a) =>
+-- | Partition the data wrt the median value of the inner product
+partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
                      u a -- ^ projection vector
-                  -> V.Vector (v a) -- ^ dataset
-                  -> (a, V.Vector (v a), V.Vector (v a)) -- ^ median, smaller, larger
-partitionAtMedian r xs =
-  (thr, VG.take n xs', VG.drop n xs')
+                  -> V.Vector (v a) -- ^ dataset (3 or more elements)
+                  -> (a, Margin a, V.Vector (v a), V.Vector (v a)) -- ^ median, margin, smaller, larger
+partitionAtMedian r xs = (thr, margin, ll, rr)
   where
-    thr = inns VG.! n
-    n = VG.length xs `div` 2
+    (ll, rr) = (VG.take nh xs', VG.drop nh xs')
+    -- (pjl, pjr) = (VG.head inns, VG.last inns) -- (min, max) inner product values
+    (mgl, mgr) = (inns VG.! (nh - 1), inns VG.! (nh + 1))
+    margin = Margin (Max mgl) (Min mgr)
+    -- marginL = mgl / (pjr - pjl) -- lower bound of margin, normalized to range
+    -- marginR = mgr / (pjr - pjl) -- upper bound of margin, normalized to range
+    thr = inns VG.! nh -- inner product threshold
+    n = VG.length xs -- total data size
+    nh = n `div` 2 -- size of left partition
     projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs
     (xs', inns) = VG.unzip projs
 
@@ -300,6 +328,26 @@ sortByVG f v = runST $ do
   V.sortBy (comparing f) vm
   VG.freeze vm
 
+
+
+
+
+
+
+-- data Avg a = Avg {
+--   avgCount :: !(Sum Int)
+--   , avgSum :: !(Sum a)
+--                  }
+-- average :: (Foldable t, Fractional a) => t a -> a
+-- average = getAvg . foldl' bumpAvg mempty
+-- bumpAvg :: Num a => Avg a -> a -> Avg a
+-- bumpAvg aa x = Avg (Sum 1) (Sum x) <> aa
+-- instance (Num a) => Semigroup (Avg a) where
+--   Avg c0 s0 <> Avg c1 s1 = Avg (c0<>c1) (s0<>s1)
+-- instance (Num a) => Monoid (Avg a) where
+--   mempty = Avg mempty mempty
+-- getAvg :: Fractional a => Avg a -> a
+-- getAvg (Avg c s) = getSum s / fromIntegral (getSum c)
 
 
 -- -- | Label a value with a unique identifier

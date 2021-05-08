@@ -7,20 +7,25 @@
 {-# language GeneralizedNewtypeDeriving #-}
 -- {-# language MultiParamTypeClasses #-}
 {-# options_ghc -Wno-unused-imports #-}
+{-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree (
   -- * Construction
-  tree
-  , tree'
-  , treeRT2
-  , forest
-  -- * Query
-  , nearest
-  -- * Validation
-  , recall
+  -- tree
+  -- , tree'
+  -- , treeRT
+  -- , forest
+  -- -- * Query
+  -- , nearest
+  -- -- * Validation
+  -- , recall
   -- * Access
-  , levels, points, leaves, getLeaf
+    levels, points, leaves, getLeaf
   -- * Types
+  -- ** RPTree
   , RPTree
+  -- *** internal
+  , RPT
+  -- ** RT
   , RT
   -- *
   , SVector, fromListSv
@@ -32,13 +37,13 @@ module Data.RPTree (
   , innerSS, innerSD
     -- *** L2 distance
   , metricSSL2, metricSDL2
-  -- * Random generation
-  -- ** pure
-  , Gen, evalGen
-  -- ** monadic
-  , GenT, evalGenT
-  -- ** scalar distributions
-  , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
+  -- -- * Random generation
+  -- -- ** pure
+  -- , Gen, evalGen
+  -- -- ** monadic
+  -- , GenT, evalGenT
+  -- -- ** scalar distributions
+  -- , bernoulli, normal, stdNormal, uniformR, stdUniform, exponential
   -- ** multivariate
   , sparse, dense
   -- * Rendering
@@ -83,8 +88,8 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, sampleWOR, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+import Data.RPTree.Gen (sparse, dense)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin)
 
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -105,226 +110,229 @@ counts = foldl count mempty
 count :: Ord a => Counts a -> a -> Counts a
 count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
--- | Approximate the set of points nearest to the query by voting search
---
--- A point is retained if it appears in more than k trees
-nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d, Ord a,
-             Foldable f, Functor f, Foldable t) =>
-           Int -- ^ counting threshold k
-        -> f (RPTree d (t a)) -- ^ forest
-        -> v d -- ^ query
-        -> [(a, Int)]
-nearest thr tts q = keepCounts thr ks
-  where
-    bkts = fmap (`getLeaf` q) tts
-    ks = foldMap counts bkts
+-- -- | Approximate the set of points nearest to the query by voting search
+-- --
+-- -- A point is retained if it appears in more than k trees
+-- nearest :: (Inner SVector v, Ord d, VU.Unbox d, Num d, Ord a,
+--              Foldable f, Functor f, Foldable t) =>
+--            Int -- ^ counting threshold k
+--         -> f (RPTree d (t a)) -- ^ forest
+--         -> v d -- ^ query
+--         -> [(a, Int)]
+-- nearest thr tts q = keepCounts thr ks
+--   where
+--     bkts = fmap (`getLeaf` q) tts
+--     ks = foldMap counts bkts
 
 
 
 
--- | average recall-at-k, computed over a set of trees
-recall :: (Foldable t, Functor t, Inner u v, Inner SVector v,
-            VU.Unbox a, Ord a, Ord (u a), Floating a) =>
-          t (RPTree a [u a])
-       -> Int -- ^ k : number of nearest neighbors to consider
-       -> v a -- ^ query point
-       -> Double
-recall tt k q = sum rs / fromIntegral n
-  where
-    rs = fmap (\t -> recall1 t k q) tt
-    n = length tt
+-- -- | average recall-at-k, computed over a set of trees
+-- recall :: (Foldable t, Functor t, Inner u v, Inner SVector v,
+--             VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+--           t (RPTree a [u a])
+--        -> Int -- ^ k : number of nearest neighbors to consider
+--        -> v a -- ^ query point
+--        -> Double
+-- recall tt k q = sum rs / fromIntegral n
+--   where
+--     rs = fmap (\t -> recall1 t k q) tt
+--     n = length tt
 
-recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
-          RPTree a [u a]
-       -> Int -- ^ k : number of nearest neighbors to consider
-       -> v a  -- ^ query point
-       -> Double
-recall1 = recallWith metricL2
+-- recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+--           RPTree a [u a]
+--        -> Int -- ^ k : number of nearest neighbors to consider
+--        -> v a  -- ^ query point
+--        -> Double
+-- recall1 = recallWith metricL2
 
 
-recallWith :: (Fractional a1, Inner SVector v, VU.Unbox d, Ord d, Ord a3,
-               Ord a2, Num d) =>
-              (a2 -> v d -> a3) -> RPTree d [a2] -> Int -> v d -> a1
-recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
-  where
-    xs = points tt
-    dists = sortBy (comparing snd) $ map (\x -> (x, x `distf` q)) xs
-    kk = S.fromList $ map fst $ take k dists
-    aa = S.fromList $ getLeaf tt q
-    aintk = aa `S.intersection` kk
+-- recallWith :: (Fractional a1, Inner SVector v, VU.Unbox d, Ord d, Ord a3,
+--                Ord a2, Num d) =>
+--               (a2 -> v d -> a3) -> RPTree d [a2] -> Int -> v d -> a1
+-- recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
+--   where
+--     xs = points tt
+--     dists = sortBy (comparing snd) $ map (\x -> (x, x `distf` q)) xs
+--     kk = S.fromList $ map fst $ take k dists
+--     aa = S.fromList $ getLeaf tt q
+--     aintk = aa `S.intersection` kk
 
-type RPForest d a = [RPTree d a]
-
-forest :: Inner SVector v =>
-          Int -- ^ # of trees
-       -> Int -- ^ maximum tree height
-       -> Double -- ^ nonzero density of sparse projection vectors
-       -> Int -- ^ dimension of projection vectors
-       -> [v Double] -- ^ dataset
-       -> Gen [RPTree Double (V.Vector (v Double))]
-forest nt maxDepth pnz dim xss =
-  replicateM nt (tree maxDepth pnz dim xss)
-
--- | Build a random projection tree
---
--- points are partitioned by _sampling_ a threshold uniformly between the minimum and maximum of the inner products
---
--- Optimization: instead of sampling one projection vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
-tree :: (Inner SVector v) =>
-         Int -- ^ maximum tree height
-      -> Double -- ^ nonzero density of sparse projection vectors
-      -> Int -- ^ dimension of projection vectors
-      -> [v Double] -- ^ dataset
-      -> Gen (RPTree Double (V.Vector (v Double)))
-tree maxDepth pnz dim xss = do
-  -- sample all projection vectors
-  rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
-  let
-    loop ixLev xs = do
-      if ixLev >= maxDepth || length xs <= 100
-        then
-          pure $ Tip (V.fromList xs)
-        else
-        do
-          let
-            r = rvs VG.! ixLev
-            -- project the dataset
-            projs = map (\x -> (x, r `inner` x)) xs
-            hi = snd $ maximumBy (comparing snd) projs
-            lo = snd $ minimumBy (comparing snd) projs
-          -- sample a threshold
-          thr <- uniformR lo hi
-          let
-            (ll, rr) = partition (\xp -> snd xp < thr) projs
-          treel <- loop (ixLev + 1) (map fst ll)
-          treer <- loop (ixLev + 1) (map fst rr)
-          pure $ Bin thr treel treer
-  rpt <- loop 0 xss
-  pure $ RPTree rvs rpt
-
--- | Like 'tree' but here we partition at the median of the inner product values instead
-tree' :: (Inner SVector v) =>
-         Int
-      -> Double
-      -> Int
-      -> [v Double]
-      -> Gen (RPTree Double (V.Vector (v Double)))
-tree' maxDepth pnz dim xss = do
-  -- sample all projection vectors
-  rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
-  let
-    loop ixLev xs =
-      if ixLev >= maxDepth || length xs <= 100
-        then Tip xs
-        else
-          let
-            r = rvs VG.! ixLev
-            (thr, ll, rr) = partitionAtMedian r xs
-            tl = loop (ixLev + 1) ll
-            tr = loop (ixLev + 1) rr
-          in Bin thr tl tr
-  let rpt = loop 0 (V.fromList xss)
-  pure $ RPTree rvs rpt
-
+-- type RPForest d a = [RPTree d a]
 
 -- | Retrieve points nearest to the query
-getLeaf :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
-           RPTree d xs
-        -> v d -- ^ query point
-        -> xs
-getLeaf (RPTree rvs tt) x = flip evalState 0 $ go tt
+-- getLeaf :: (Inner SVector v, Ord d, VU.Unbox d, Num d) =>
+--            RPTree d xs
+--         -> v d -- ^ query point
+--         -> xs
+getLeaf (RPTree rvs tt) x = go 0 tt
   where
-    go (Tip xs) = pure xs
-    go (Bin thr ll rr) = do
-      ixLev <- get
+    go _     (Tip xs)               = xs
+    go ixLev (Bin thr margin ltree rtree) = do
       let
+        (mgl, mgh) = getMargin margin
         r = rvs VG.! ixLev
-      put (ixLev + 1)
+        proj = r `inner` x
       if r `inner` x < thr
-        then go ll
-        else go rr
+        then go (ixLev + 1) ltree
+        else go (ixLev + 1) rtree
 
 
 
 
--- | Partition uniformly at random between inner product extreme values
-treeRT :: (Monad m, Inner SVector v) =>
-          Int -- ^ max tree depth
-       -> Int -- ^ min leaf size
-       -> Double -- ^ nonzero density
-       -> Int -- ^ embedding dimension
-       -> [v Double] -- ^ data
-       -> GenT m (RT SVector Double (V.Vector (v Double)))
-treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
-  where
-    loop ixLev xs = do
-      if ixLev >= maxDepth || length xs <= minLeaf
-        then
-          pure $ RTip (V.fromList xs)
-        else
-        do
-          -- sample projection vector
-          r <- sparse pnz dim stdNormal
-          let
-            -- project the dataset
-            projs = map (\x -> (x, r `inner` x)) xs
-            hi = snd $ maximumBy (comparing snd) projs
-            lo = snd $ minimumBy (comparing snd) projs
-          -- sample a threshold
-          thr <- uniformR lo hi
-          let
-            (ll, rr) = partition (\xp -> snd xp < thr) projs
-          treel <- loop (ixLev + 1) (map fst ll)
-          treer <- loop (ixLev + 1) (map fst rr)
-          pure $ RBin r treel treer
 
--- | Partition at median inner product
-treeRT' :: (Monad m, Inner SVector v) =>
-           Int
-        -> Int
-        -> Double
-        -> Int
-        -> V.Vector (v Double)
-        -> GenT m (RT SVector Double (V.Vector (v Double)))
-treeRT' maxDepth minLeaf pnz dim xss = loop 0 xss
-  where
-    loop ixLev xs = do
-      if ixLev >= maxDepth || length xs <= minLeaf
-        then
-          pure $ RTip xs
-        else
-        do
-          r <- sparse pnz dim stdNormal
-          let
-            (_, ll, rr) = partitionAtMedian r xs
-          treel <- loop (ixLev + 1) ll
-          treer <- loop (ixLev + 1) rr
-          pure $ RBin r treel treer
+-- forest :: Inner SVector v =>
+--           Int -- ^ # of trees
+--        -> Int -- ^ maximum tree height
+--        -> Double -- ^ nonzero density of sparse projection vectors
+--        -> Int -- ^ dimension of projection vectors
+--        -> V.Vector (v Double) -- ^ dataset
+--        -> Gen [RPTree Double (V.Vector (v Double))]
+-- forest nt maxDepth pnz dim xss =
+--   replicateM nt (tree maxDepth pnz dim xss)
 
--- | Partition wrt a plane _|_ to the segment connecting two points sampled at random
---
--- (like annoy@@)
-treeRT2 :: (Monad m, Ord d, Fractional d, Inner v v, VU.Unbox d, Num d) =>
-           Int
-        -> Int
-        -> [v d]
-        -> GenT m (RT v d [v d])
-treeRT2 maxd minl xss = loop 0 xss
-  where
-    loop ixLev xs = do
-      if ixLev >= maxd || length xs <= minl
-        then
-          pure $ RTip xs
-        else
-        do
-          x12 <- sampleWOR 2 xs
-          let
-            (x1:x2:_) = x12
-            r = x1 ^-^ x2
-            (ll, rr) = partition (\x -> (r `inner` (x ^-^ x1) < 0)) xs
-          treel <- loop (ixLev + 1) ll
-          treer <- loop (ixLev + 1) rr
-          pure $ RBin r treel treer
+-- -- | Build a random projection tree
+-- --
+-- -- Optimization: instead of sampling one projection vector per branch, we sample one per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
+-- tree :: (Inner SVector v) =>
+--          Int -- ^ maximum tree height
+--       -> Double -- ^ nonzero density of sparse projection vectors
+--       -> Int -- ^ dimension of projection vectors
+--       -> V.Vector (v Double) -- ^ dataset
+--       -> Gen (RPTree Double (V.Vector (v Double)))
+-- tree maxDepth pnz dim xss = do
+--   -- sample all projection vectors
+--   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
+--   let
+--     loop ixLev xs = do
+--       if ixLev >= maxDepth || length xs <= 100
+--         then
+--           pure $ Tip xs
+--         else
+--         do
+--           let
+--             r = rvs VG.! ixLev
+--             (thr, margin, ll, rr) = partitionAtMedian r xs
+--           treel <- loop (ixLev + 1) ll
+--           treer <- loop (ixLev + 1) rr
+--           pure $ Bin thr margin treel treer
+--   rpt <- loop 0 xss
+--   pure $ RPTree rvs rpt
+
+
+
+
+
+-- -- | Partition at median inner product
+-- treeRT :: (Monad m, Inner SVector v) =>
+--            Int
+--         -> Int
+--         -> Double
+--         -> Int
+--         -> V.Vector (v Double)
+--         -> GenT m (RT SVector Double (V.Vector (v Double)))
+-- treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
+--   where
+--     loop ixLev xs = do
+--       if ixLev >= maxDepth || length xs <= minLeaf
+--         then
+--           pure $ RTip xs
+--         else
+--         do
+--           r <- sparse pnz dim stdNormal
+--           let
+--             (_, mrg, ll, rr) = partitionAtMedian r xs
+--           treel <- loop (ixLev + 1) ll
+--           treer <- loop (ixLev + 1) rr
+--           pure $ RBin r mrg treel treer
+
+
+
+
+
+
+
+-- -- | Like 'tree' but here we partition at the median of the inner product values instead
+-- tree' :: (Inner SVector v) =>
+--          Int
+--       -> Double
+--       -> Int
+--       -> V.Vector (v Double)
+--       -> Gen (RPTree Double (V.Vector (v Double)))
+-- tree' maxDepth pnz dim xss = do
+--   -- sample all projection vectors
+--   rvs <- V.replicateM maxDepth (sparse pnz dim stdNormal)
+--   let
+--     loop ixLev xs =
+--       if ixLev >= maxDepth || length xs <= 100
+--         then Tip xs
+--         else
+--           let
+--             r = rvs VG.! ixLev
+--             (thr, margin, ll, rr) = partitionAtMedian r xs
+--             tl = loop (ixLev + 1) ll
+--             tr = loop (ixLev + 1) rr
+--           in Bin thr margin tl tr
+--   let rpt = loop 0 xss
+--   pure $ RPTree rvs rpt
+
+
+-- -- | Partition uniformly at random between inner product extreme values
+-- treeRT :: (Monad m, Inner SVector v) =>
+--           Int -- ^ max tree depth
+--        -> Int -- ^ min leaf size
+--        -> Double -- ^ nonzero density
+--        -> Int -- ^ embedding dimension
+--        -> V.Vector (v Double) -- ^ data
+--        -> GenT m (RT SVector Double (V.Vector (v Double)))
+-- treeRT maxDepth minLeaf pnz dim xss = loop 0 xss
+--   where
+--     loop ixLev xs = do
+--       if ixLev >= maxDepth || length xs <= minLeaf
+--         then
+--           pure $ RTip xs
+--         else
+--         do
+--           -- sample projection vector
+--           r <- sparse pnz dim stdNormal
+--           let
+--             -- project the dataset
+--             projs = map (\x -> (x, r `inner` x)) xs
+--             hi = snd $ maximumBy (comparing snd) projs
+--             lo = snd $ minimumBy (comparing snd) projs
+--           -- sample a threshold
+--           thr <- uniformR lo hi
+--           let
+--             (ll, rr) = partition (\xp -> snd xp < thr) projs
+--           treel <- loop (ixLev + 1) (map fst ll)
+--           treer <- loop (ixLev + 1) (map fst rr)
+--           pure $ RBin r treel treer
+
+
+-- -- | Partition wrt a plane _|_ to the segment connecting two points sampled at random
+-- --
+-- -- (like annoy@@)
+-- treeRT2 :: (Monad m, Ord d, Fractional d, Inner v v, VU.Unbox d, Num d) =>
+--            Int
+--         -> Int
+--         -> [v d]
+--         -> GenT m (RT v d [v d])
+-- treeRT2 maxd minl xss = loop 0 xss
+--   where
+--     loop ixLev xs = do
+--       if ixLev >= maxd || length xs <= minl
+--         then
+--           pure $ RTip xs
+--         else
+--         do
+--           x12 <- sampleWOR 2 xs
+--           let
+--             (x1:x2:_) = x12
+--             r = x1 ^-^ x2
+--             (ll, rr) = partition (\x -> (r `inner` (x ^-^ x1) < 0)) xs
+--           treel <- loop (ixLev + 1) ll
+--           treer <- loop (ixLev + 1) rr
+--           pure $ RBin r treel treer
 
 
 

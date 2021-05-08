@@ -1,15 +1,14 @@
 {-# language DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# options_ghc -Wno-unused-imports #-}
+
 module Data.RPTree.Conduit (
   treeSink, forestSink
   -- ** helpers
   , dataSource
   ) where
 
-import Control.Exception (Exception(..))
 import Control.Monad (replicateM)
-import Data.Typeable (Typeable)
 import GHC.Word (Word64)
 
 -- conduit
@@ -18,11 +17,13 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 -- containers
-import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
+import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey, intersectionWith)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
+-- splitmix-distributions
+import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -32,8 +33,8 @@ import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replic
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
-import Data.RPTree.Gen (Gen, evalGen, GenT, evalGenT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR, sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian)
+import Data.RPTree.Gen (sparse, dense)
+import Data.RPTree.Internal (RPTree(..), RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
 
 
 
@@ -70,7 +71,7 @@ treeSink :: (Monad m, Inner SVector v) =>
          -> m (Maybe (RPTree Double (V.Vector (v Double))))
 treeSink seed maxDepth minLeaf n pnz dim src = do
   let
-    rvs = evalGen seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
+    rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
   tm <- C.runConduit $ src .|
                        insertC maxDepth minLeaf n rvs .|
                        C.last
@@ -79,7 +80,7 @@ treeSink seed maxDepth minLeaf n pnz dim src = do
     _ -> pure Nothing
 
 -- | Incrementally build a tree
-insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Num d) =>
+insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
            Int -- ^ max tree depth
         -> Int -- ^ min leaf size
         -> Int -- ^ data chunk size
@@ -88,6 +89,7 @@ insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Num d) =>
 insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
   where
     z = Tip mempty
+
 
 
 -- | Populate a forest from a data stream
@@ -99,7 +101,9 @@ insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
 -- * stationary : each chunk is representative of the whole dataset
 --
 -- * bounded : we wait until the end of the stream to produce a result
-forestSink :: (Monad m, Inner SVector v) =>
+--
+-- Throws 'EmptyResult' if the conduit is empty
+forestSink :: (MonadThrow m, Inner SVector v) =>
                  Word64 -- ^ random seed
               -> Int -- ^ max tree depth
               -> Int -- ^ min leaf size
@@ -108,10 +112,10 @@ forestSink :: (Monad m, Inner SVector v) =>
               -> Double -- ^ nonzero density of projection vectors
               -> Int -- ^ dimension of projection vectors
               -> C.ConduitT () (v Double) m () -- ^ data source
-              -> m (Either String (IM.IntMap (RPTree Double (V.Vector (v Double)))))
+              -> m (IM.IntMap (RPTree Double (V.Vector (v Double))))
 forestSink seed maxd minl ntrees chunksize pnz dim src = do
   let
-    rvss = evalGen seed $ do
+    rvss = sample seed $ do
       rvs <- replicateM ntrees $ V.replicateM maxd (sparse pnz dim stdNormal)
       pure $ IM.fromList $ zip [0 .. ] rvs
   tm <- C.runConduit $ src .|
@@ -120,14 +124,15 @@ forestSink seed maxd minl ntrees chunksize pnz dim src = do
   case tm of
     Just ts -> do
       let
-        res = IM.foldlWithKey (\acc i t -> case IM.lookup i rvss of
-                                  Just rvs -> IM.insert i (RPTree rvs t) acc
-                                  Nothing -> acc) mempty ts
-      pure $ Right res
-    _ -> pure $ Left "forestSink : no results"
+        res = IM.intersectionWith RPTree rvss ts
+      pure res
+    _ -> throwM $ EmptyResult "forestSink"
 
 
-insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d)) =>
+
+
+
+insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
                 Int  -- ^ max tree depth
              -> Int -- ^ min leaf size
              -> Int -- ^ chunk size
@@ -137,22 +142,25 @@ insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d
                 (IM.IntMap (RPT d (V.Vector (v d))))
                 m
                 ()
-insertMultiC maxd minl n rvss = chunked n mempty (insertMulti maxd minl rvss)
+insertMultiC maxd minl n rvss = chunked n im0 (insertMulti maxd minl rvss)
+  where
+    im0 = IM.map (const z) rvss
+    z = Tip mempty
 
 
-insertMulti :: (Ord d, Inner u v, VU.Unbox d, Num d, VG.Vector v1 (u d)) =>
+insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
                Int
             -> Int
-            -> IM.IntMap (v1 (u d))
-            -> IM.IntMap (RPT d (V.Vector (v d)))
-            -> V.Vector (v d)
+            -> IM.IntMap (v1 (u d)) -- ^ projection vectors
+            -> IM.IntMap (RPT d (V.Vector (v d))) -- ^ accumulator of subtrees
+            -> V.Vector (v d) -- ^ data chunk
             -> IM.IntMap (RPT d (V.Vector (v d)))
 insertMulti maxd minl rvss tacc xs =
   flip IM.mapWithKey tacc $ \i t -> case IM.lookup i rvss of
                                       Just rvs -> insert maxd minl rvs t xs
                                       _        -> t
 
-insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Num d) =>
+insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size
        -> v1 (u d) -- ^ projection vectors
@@ -168,26 +176,30 @@ insert maxDepth minLeaf rvs = loop 0
       in
         case tt of
 
-          b@(Bin thr tl0 tr0) ->
+          b@(Bin thr0 margin0 tl0 tr0) ->
             if ixLev >= maxDepth || length xs <= minLeaf
               then b -- return current subtree
               else
                 let
-                  (_, ll, rr) = partitionAtMedian r xs -- ignore new threshold (?)
+                  (thr, margin, ll, rr) =
+                    partitionAtMedian r xs
+                  margin' = margin0 <> margin
+                  thr' = (thr0 + thr) / 2
                   tl = loop (ixLev + 1) tl0 ll
                   tr = loop (ixLev + 1) tr0 rr
-                in Bin thr tl tr
+                in Bin thr' margin' tl tr
 
           Tip xs0 -> do
             let xs' = xs <> xs0
-            if ixLev >= maxDepth || length xs <= 1
+            if ixLev >= maxDepth || length xs <= minLeaf
               then Tip xs' -- concat data in leaf
               else
                 let
-                  (thr, ll, rr) = partitionAtMedian r xs'
+                  (thr, margin, ll, rr) = partitionAtMedian r xs'
                   tl = loop (ixLev + 1) z ll
                   tr = loop (ixLev + 1) z rr
-                in Bin thr tl tr
+                in Bin thr margin tl tr
+
 
 chunked :: (Monad m) =>
            Int -- ^ chunk size
@@ -197,11 +209,5 @@ chunked :: (Monad m) =>
 chunked n z f = do C.chunksOf n .|
                      C.map V.fromList .|
                      C.scanl f z -- .|
-         -- C.last
-  -- case xsm of
-  --   Nothing -> throwM $ CNoDataInConduit
-  --   Just xs -> pure xs
 
-data CException =
-  CNoDataInConduit deriving (Eq, Show, Typeable)
-instance Exception CException
+

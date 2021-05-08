@@ -54,7 +54,7 @@ toStringRPT = B.render . toBox
 
 toBox :: (Show a, Boxed a, PrintfArg v) => RPT v a -> B.Box
 toBox = \case
-  (Bin thr tl tr) ->
+  (Bin thr _ tl tr) ->
     txt (node thr) `stack` (toBox tl `byside` toBox tr)
   Tip xs -> boxed xs -- tipData xs -- txt $ show x
   where

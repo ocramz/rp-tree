@@ -36,6 +36,7 @@ library
                      , mtl
                      -- , primitive
                      , splitmix >= 0.1.0.3
+                     , splitmix-distributions >= 0.8
                      , transformers
                      , ulid
                      , vector >= 0.12.1.2
@@ -62,7 +63,9 @@ executable rp-tree
   build-depends:       base
                      , conduit
                      , containers
+                     , exceptions
                      , rp-tree
+                     , splitmix-distributions
                      , transformers
                      , vector
 

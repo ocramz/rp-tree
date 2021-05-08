@@ -10,35 +10,39 @@ import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, 
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 -- containers
 import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
+-- exceptions
+import Control.Monad.Catch (MonadThrow(..))
+-- splitmix-distributions
+import System.Random.SplitMix.Distributions (Gen, GenT, sample, bernoulli, normal)
 -- transformers
 import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (Inner(..), RPTree, tree, tree', RT, treeRT2, leaves, SVector, DVector, Gen, GenT, dense, bernoulli, normal, evalGen, evalGenT, writeCsv)
+import Data.RPTree (Inner(..), RPTree, RPT, RT, leaves, SVector, DVector, dense, writeCsv)
 import Data.RPTree.Conduit (treeSink, forestSink, dataSource)
 
 main :: IO ()
 main = do
   let
     n = 10000
-  renderTree0 n
-  renderTree1 n
+  -- renderTree0 n
+  -- renderTree1 n
+  undefined -- FIXME
 
 
-renderTree0 :: Int -> IO ()
-renderTree0 n = do
-  let csvrows = V.toList $ fold $ flip evalState A $ traverse labeledV (tree0 n)
+-- renderTree0 :: Int -> IO ()
+renderTree0 tt = do
+  let csvrows = V.toList $ fold $ flip evalState A $ traverse labeledV tt -- (tree0 n)
   writeCsv "r/scatter_data.csv" csvrows
 
-renderTree1 :: Int -> IO ()
-renderTree1 n = do
+-- renderTree1 :: Int -> IO ()
+renderTree1 tt = do
   let
-    csvrows :: [(DVector Double, Pal5)]
-    csvrows = fold $ flip evalState A $ traverse labeled (tree1 n)
-  writeCsv "r/scatter_data_rt2.csv" csvrows  
-
+    -- csvrows :: [(DVector Double, Pal5)]
+    csvrows = fold $ flip evalState A $ traverse labeledV tt -- (tree1 n)
+  writeCsv "r/scatter_data_rt2.csv" $ V.toList csvrows
 
 labeled :: (Enum i) =>
            [a] -> State i [(a, i)]
@@ -72,14 +76,14 @@ instance Enum Pal5 where
     D -> 3
     E -> 4
 
-tree0 :: Int -> RPTree Double (V.Vector (DVector Double))
-tree0 n = evalGen 1234 $ tree 10 1.0 2 (dataset n)
+-- tree0 :: Int -> RPTree Double (V.Vector (DVector Double))
+-- tree0 n = evalGen 1234 $ tree 10 1.0 2 (dataset n)
 
-tree1 :: Int -> RT DVector Double [DVector Double]
-tree1 n = evalGen 1234 $ treeRT2 10 20 (dataset n)
+-- tree1 :: Int -> RT SVector Double (V.Vector (DVector Double))
+-- tree1 n = evalGen 1234 $ treeRT 10 20 1.0 2 (dataset n)
 
-dataset :: Int -> [DVector Double]
-dataset n = evalGen 1234 $ replicateM n normal2 -- (dense 2 $ normal 0 1)
+dataset :: Int -> V.Vector (DVector Double)
+dataset n = V.fromList $ sample 1234 $ replicateM n (dense 2 $ normal 0 1)
 
 normal2 :: (Monad m) => GenT m (DVector Double)
 normal2 = do
@@ -88,20 +92,22 @@ normal2 = do
     then dense 2 $ normal 0 0.5
     else dense 2 $ normal 2 0.5
 
--- forestC0 :: Monad m =>
---             Int
---          -> GenT m (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
+
+-- conduit
+
 treeC0 :: Monad m =>
           Int -> GenT m (Maybe (RPTree Double (V.Vector (DVector Double))))
 treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
 
-forestC0 :: Monad m =>
+forestC0 :: MonadThrow m =>
             Int
          -> GenT
          m
-         (Either
-           String (IM.IntMap (RPTree Double (V.Vector (DVector Double)))))
+         (IM.IntMap (RPTree Double (V.Vector (DVector Double))))
 forestC0 n = forestSink 1234 10 20 10 100 1.0 2 (srcC n)
+
+
+
 
 srcC :: Monad m => Int -> C.ConduitT i (DVector Double) (GenT m) ()
 srcC n = dataSource n normal2

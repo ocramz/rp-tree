@@ -40,7 +40,8 @@ packages:
 # - git: https://github.com/commercialhaskell/stack.git
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
-# extra-deps: []
+extra-deps:
+- splitmix-distributions-0.8.0.0@sha256:252f0c3eb5f58cb27edafe7dc4107de2640b72795e96317420ed862609159abd,1571
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
