@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Main where
@@ -13,14 +14,14 @@ import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWi
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
 -- splitmix-distributions
-import System.Random.SplitMix.Distributions (Gen, GenT, sample, bernoulli, normal)
+import System.Random.SplitMix.Distributions (Gen, GenT, sample, sampleT, bernoulli, normal)
 -- transformers
 import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, Inner(..), RPTree, RPT, RT, leaves, SVector, DVector, dense, writeCsv)
+import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, RPT, RT, leaves, SVector, DVector, fromListDv, dense, writeCsv)
 import Data.RPTree.Conduit (forest, dataSource)
 
 main :: IO ()
@@ -89,6 +90,21 @@ dataset n = V.fromList $ sample 1234 $ replicateM n (dense 2 $ normal 0 1)
 -- treeC0 :: MonadThrow m =>
 --           Int -> GenT m (RPTree Double (V.Vector (DVector Double)))
 -- treeC0 n = treeSink 1234 10 20 100 1.0 2 (srcC n)
+
+{-
+λ> nn0 10000 (fromListDv [0,0])
+[(0.13092191004810114,DV [-8.771274989760332e-2,9.71957819868927e-2]),(0.14722273682679538,DV [-4.767722969780902e-2,0.13928896584839093]),(0.1626065099556818,DV [-4.57842765697381e-2,0.15602780873598454]),(0.22082909577433263,DV [-3.62336905451185e-2,0.21783619811681887]),(0.22085935710897311,DV [0.21196201255823421,-6.2056110535964756e-2]),(0.2636139991233282,DV [-0.24290511334764195,0.10241799862994452]),(0.3869415454995779,DV [-0.3658837577279577,0.12590804368455188]),(0.3951528583078011,DV [-0.3543713488257354,0.1748334308999686]),(0.6174219338196472,DV [-0.4952807707701239,0.3686553979897009]),(0.6968774335522048,DV [-0.6408548616154526,0.2737575638007956])]
+-}
+nn0 :: (Inner SVector v, Inner DVector v) =>
+       Int -> v Double -> V.Vector (Double, DVector Double)
+nn0 n q = case ttsm of
+  Just tts -> knn metricL2 10 tts q -- FIXME voting search size ?!
+  -- Nothing -> mempty
+  where
+    ttsm = sampleT 1234 $ forestC0 n
+
+cs0 n q = case sampleT 1234 $ forestC0 n of
+  Just tts -> (`candidates` q) <$> tts
 
 forestC0 :: MonadThrow m =>
             Int

@@ -18,7 +18,7 @@ module Data.RPTree (
   -- * Validation
   , recall
   -- * Access
-  , levels, points, leaves, getLeaf
+  , levels, points, leaves, candidates
   -- * Types
   -- ** RPTree
   , RPTree, RPForest
@@ -57,7 +57,7 @@ import GHC.Generics (Generic)
 import GHC.Word (Word64)
 
 -- containers
--- import Data.Sequence (Seq, (|>))
+import Data.Sequence (Seq, (|>))
 import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, insertWith)
 import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
@@ -65,7 +65,7 @@ import Control.DeepSeq (NFData(..))
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- psqueues
-import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList)
+import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList, findMin, minView)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -79,7 +79,7 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (forest, dataSource)
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin, sortByVG)
 
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -101,32 +101,39 @@ count :: Ord a => Counts a -> a -> Counts a
 count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
 
--- | k nearest neighbors
-knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d,
-         Semigroup (t v2), Ord v2, Foldable t) =>
+-- -- | k nearest neighbors
+knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d, Ord v2) =>
        (v2 -> v d -> p) -- ^ distance function
     -> Int -- ^ k neighbors
-    -> Int -- ^ voting threshold
-    -> RPForest d (t v2) -- ^ forest
-    -> v d -- ^ query
-    -> PQ.IntPSQ p v2
-knn distf k thr tts q = PQ.fromList $ zipWith (\i x -> (i, x `distf` q, x) ) [0 ..] candidates
-  where
-    candidates = map fst $ take k $ nearest thr tts q
 
--- | Approximate the set of points nearest to the query by voting search
---
--- A point is retained if it appears in more than k trees
-nearest :: (Inner SVector v, VU.Unbox d, Real d,
-             Semigroup (t a), Ord a, Foldable t) =>
-           Int -- ^ counting threshold k
-        -> RPForest d (t a) -- ^ forest
-        -> v d -- ^ query
-        -> [(a, Int)]
-nearest thr tts q = keepCounts thr ks
+    -> RPForest d (V.Vector v2) -- ^ forest
+    -> v d -- ^ query
+    -> V.Vector (p, v2) -- ^ ordered
+knn distf k tts q = sortByVG fst cs
   where
-    bkts = fmap (`getLeaf` q) tts
-    ks = foldMap counts bkts
+    cs = VG.map (\x -> (x `distf` q, x)) $ VG.take k $ fold $ (`candidates` q) <$> tts
+
+pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)
+pqSeq pqq = go pqq mempty
+  where
+    go pq acc = case PQ.minView pq of
+      Nothing -> acc
+      Just (_, p, v, rest) -> go rest $ acc |> (p, v)
+
+
+-- -- | Approximate the set of points nearest to the query by voting search
+-- --
+-- -- A point is retained if it appears in more than k trees
+-- nearest :: (Inner SVector v, VU.Unbox d, Real d,
+--              Semigroup (t a), Ord a, Foldable t) =>
+--            Int -- ^ counting threshold k
+--         -> RPForest d (t a) -- ^ forest
+--         -> v d -- ^ query
+--         -> [(a, Int)]
+-- nearest thr tts q = keepCounts thr ks
+--   where
+--     bkts = fmap (`candidates` q) tts
+--     ks = foldMap counts bkts
 
 
 -- | average recall-at-k, computed over a set of trees
@@ -157,7 +164,7 @@ recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
     xs = points tt
     dists = sortBy (comparing snd) $ toList $ fmap (\x -> (x, x `distf` q)) xs
     kk = S.fromList $ map fst $ take k dists
-    aa = set $ getLeaf tt q
+    aa = set $ candidates tt q
     aintk = aa `S.intersection` kk
 
 set :: (Foldable t, Ord a) => t a -> S.Set a
@@ -168,11 +175,11 @@ set = foldl (flip S.insert) mempty
 -- | Retrieve points nearest to the query
 --
 -- in case of a narrow margin, collect both branches of the tree
-getLeaf :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
-           RPTree d xs
-        -> v d -- ^ query point
-        -> xs
-getLeaf (RPTree rvs tt) x = go 0 tt
+candidates :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
+              RPTree d xs
+           -> v d -- ^ query point
+           -> xs
+candidates (RPTree rvs tt) x = go 0 tt
   where
     go _     (Tip xs)                     = xs
     go ixLev (Bin thr margin ltree rtree) = do
