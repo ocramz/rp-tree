@@ -33,7 +33,7 @@ library
                      , microlens
                      , microlens-th
                      , mtl
-                     , psqueues
+                     -- , psqueues
                      , serialise
                      , splitmix-distributions >= 0.8
                      , transformers

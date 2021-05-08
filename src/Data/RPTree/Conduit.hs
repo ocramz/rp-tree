@@ -1,7 +1,7 @@
 {-# language DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# options_ghc -Wno-unused-imports #-}
-
+{-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree.Conduit (
   forest
   -- ** helpers

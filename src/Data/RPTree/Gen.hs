@@ -101,13 +101,16 @@ replaceInBuffer k imm y = do
 -- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator
 sparse :: (Monad m, VU.Unbox a) =>
           Double -- ^ nonzero density
-       -> Int -- ^ size
+       -> Int -- ^ vector dimension
        -> GenT m a -- ^ random generator of vector components
        -> GenT m (SVector a)
 sparse p sz rand = SV sz <$> sparseVG p sz rand
 
+-- | Generate a dense random vector with components sampled from the supplied random generator
 dense :: (Monad m, VG.Vector VU.Vector a) =>
-         Int -> GenT m a -> GenT m (DVector a)
+         Int -- ^ vector dimension
+      -> GenT m a -- ^ random generator of vector components
+      -> GenT m (DVector a)
 dense sz rand = DV <$> denseVG sz rand
 
 

@@ -22,20 +22,22 @@ module Data.RPTree (
   -- * Types
   -- ** RPTree
   , RPTree, RPForest
-  -- *** internal
-  , RPT
-  -- ** RT
-  , RT
+  -- -- *** internal
+  -- , RPT
+  -- -- ** RT
+  -- , RT
   -- *
   , SVector, fromListSv
   , DVector, fromListDv
   -- * inner product
-  , Inner(..)
+  , Inner(..), Scale(..)
   --   -- ** helpers for implementing Inner instances
   --   -- *** inner product
   -- , innerSS, innerSD
   --   -- *** L2 distance
   -- , metricSSL2, metricSDL2
+  -- * Conduit
+  , dataSource
   -- * Random generation
   -- ** vector
   , sparse, dense
@@ -64,8 +66,8 @@ import qualified Data.Set as S (Set, fromList, intersection, insert)
 import Control.DeepSeq (NFData(..))
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
--- psqueues
-import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList, findMin, minView)
+-- -- psqueues
+-- import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList, findMin, minView)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -79,26 +81,9 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (forest, dataSource)
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin, sortByVG)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin, sortByVG)
 
 import Data.RPTree.Draw (draw, writeCsv)
-
-
-newtype Counts a = Counts {
-  unCounts :: M.Map a (Sum Int) } deriving (Eq, Show, Semigroup, Monoid)
-keepCounts :: Int -- ^ keep entry iff counts are larger than this value
-           -> Counts a
-           -> [(a, Int)]
-keepCounts thr cs = M.foldrWithKey insf mempty c
-  where
-    insf k v acc
-      | v >= thr = (k, v) : acc
-      | otherwise = acc
-    c = getSum `fmap` unCounts cs
-counts :: (Foldable t, Ord a) => t a -> Counts a
-counts = foldl count mempty
-count :: Ord a => Counts a -> a -> Counts a
-count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
 
 -- | k nearest neighbors
@@ -111,28 +96,6 @@ knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
 knn distf k tts q = sortByVG fst cs
   where
     cs = VG.map (\x -> (x `distf` q, x)) $ VG.take k $ fold $ (`candidates` q) <$> tts
-
-pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)
-pqSeq pqq = go pqq mempty
-  where
-    go pq acc = case PQ.minView pq of
-      Nothing -> acc
-      Just (_, p, v, rest) -> go rest $ acc |> (p, v)
-
-
--- -- | Approximate the set of points nearest to the query by voting search
--- --
--- -- A point is retained if it appears in more than k trees
--- nearest :: (Inner SVector v, VU.Unbox d, Real d,
---              Semigroup (t a), Ord a, Foldable t) =>
---            Int -- ^ counting threshold k
---         -> RPForest d (t a) -- ^ forest
---         -> v d -- ^ query
---         -> [(a, Int)]
--- nearest thr tts q = keepCounts thr ks
---   where
---     bkts = fmap (`candidates` q) tts
---     ks = foldMap counts bkts
 
 
 -- | average recall-at-k, computed over a set of trees
@@ -195,6 +158,32 @@ candidates (RPTree rvs tt) x = go 0 tt
 
 
 
+
+
+
+-- pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)
+-- pqSeq pqq = go pqq mempty
+--   where
+--     go pq acc = case PQ.minView pq of
+--       Nothing -> acc
+--       Just (_, p, v, rest) -> go rest $ acc |> (p, v)
+
+
+-- newtype Counts a = Counts {
+--   unCounts :: M.Map a (Sum Int) } deriving (Eq, Show, Semigroup, Monoid)
+-- keepCounts :: Int -- ^ keep entry iff counts are larger than this value
+--            -> Counts a
+--            -> [(a, Int)]
+-- keepCounts thr cs = M.foldrWithKey insf mempty c
+--   where
+--     insf k v acc
+--       | v >= thr = (k, v) : acc
+--       | otherwise = acc
+--     c = getSum `fmap` unCounts cs
+-- counts :: (Foldable t, Ord a) => t a -> Counts a
+-- counts = foldl count mempty
+-- count :: Ord a => Counts a -> a -> Counts a
+-- count (Counts mm) x = Counts $ M.insertWith mappend x (Sum 1) mm
 
 
 -- forest :: Inner SVector v =>
