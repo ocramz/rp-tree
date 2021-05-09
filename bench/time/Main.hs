@@ -37,12 +37,14 @@ data BenchConfig = BenchConfig {
 -- | runs a benchmark on a newly created RPForest initialized with a random seed
 forestBench ::
   (MonadThrow m, Inner SVector v) =>
-  Int
-  -> BenchConfig
-  -> C.ConduitT () (v Double) m ()
+  C.ConduitT () (v Double) m ()
   -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
-  -> IO (Stats, Stats)
-forestBench n cfg src = benchmark n setup (const $ pure ())
+  -> Int -- ^ number of replicates
+  -> BenchConfig
+  -> IO Stats -- ^ wall-clock time measurement only
+forestBench src go n cfg = do
+  (_, wct) <- benchmark n setup (const $ pure ()) go
+  pure wct
   where
     setup = do
       s <- randSeed
