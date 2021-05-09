@@ -8,11 +8,13 @@ import GHC.Word (Word64)
 -- benchpress
 import Test.BenchPress (Stats(..), benchmark)
 -- conduit
-import qualified Data.Conduit as C (ConduitT, runConduit, yield, await)
+import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
 import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
+-- mtl
+import Control.Monad.Trans.Class (MonadTrans(..))
 -- splitmix
 import System.Random.SplitMix (initSMGen, unseedSMGen)
 -- vector
@@ -32,18 +34,20 @@ data BenchConfig = BenchConfig {
   , bcProjDim :: Int
                                }
 
--- runs a benchmark on a newly created RPForest initialized with a random seed
-forestBench :: Inner SVector v =>
-               Int
-            -> BenchConfig
-            -> C.ConduitT () (v Double) IO () -- ^ FIXME lift inner monad from IO
-            -> (RPForest Double (V.Vector (v Double)) -> IO c)
-            -> IO (Stats, Stats)
+-- | runs a benchmark on a newly created RPForest initialized with a random seed
+forestBench ::
+  (MonadThrow m, Inner SVector v) =>
+  Int
+  -> BenchConfig
+  -> C.ConduitT () (v Double) m ()
+  -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
+  -> IO (Stats, Stats)
 forestBench n cfg src = benchmark n setup (const $ pure ())
   where
     setup = do
       s <- randSeed
-      growForest s cfg src
+      -- let src' = C.transPipe lift src
+      pure $ growForest s cfg src
 
 growForest :: (MonadThrow m, Inner SVector v) =>
               Word64

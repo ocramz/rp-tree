@@ -1,5 +1,5 @@
 name:                rp-tree
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            Random projection trees
 description:         Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces
 homepage:            https://github.com/ocramz/rp-tree
@@ -66,6 +66,7 @@ benchmark bench-time
                      , benchpress
                      , conduit
                      , exceptions
+                     , mtl
                      , rp-tree
                      , splitmix >= 0.1.0.3
                      , vector
