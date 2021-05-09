@@ -37,63 +37,6 @@ import Data.RPTree.Gen (sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
 
 
-
-
--- | Source of random data points
-dataSource :: (Monad m) =>
-              Int -- ^ number of vectors to generate
-           -> GenT m a -- ^ random generator for the vector components
-           -> C.ConduitT i a (GenT m) ()
-dataSource n gg = flip C.unfoldM 0 $ \i -> do
-  if i == n
-    then pure Nothing
-    else do
-      x <- gg
-      pure $ Just (x, i + 1)
-
--- | Populate a tree from a data stream
---
--- Assumptions on the data source:
---
--- * non-empty : contains at least one value
---
--- * stationary : each chunk is representative of the whole dataset
---
--- * bounded : we wait until the end of the stream to produce a result
---
--- Throws 'EmptyResult' if the conduit is empty
-tree :: (MonadThrow m, Inner SVector v) =>
-            Word64 -- ^ random seed
-         -> Int -- ^ max tree depth
-         -> Int -- ^ min leaf size
-         -> Int -- ^ data chunk size
-         -> Double -- ^ nonzero density of projection vectors
-         -> Int -- ^ dimension of projection vectors
-         -> C.ConduitT () (v Double) m () -- ^ data source
-         -> m (RPTree Double (V.Vector (v Double)))
-tree seed maxDepth minLeaf n pnz dim src = do
-  let
-    rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
-  tm <- C.runConduit $ src .|
-                       insertC maxDepth minLeaf n rvs .|
-                       C.last
-  case tm of
-    Just t -> pure $ RPTree rvs t
-    _ -> throwM $ EmptyResult "treeSink"
-
--- | Incrementally build a tree
-insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
-           Int -- ^ max tree depth
-        -> Int -- ^ min leaf size
-        -> Int -- ^ data chunk size
-        -> V.Vector (u d) -- ^ random projection vectors
-        -> C.ConduitT (v d) (RPT d (V.Vector (v d))) m ()
-insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
-  where
-    z = Tip mempty
-
-
-
 -- | Populate a forest from a data stream
 --
 -- Assumptions on the data source:
@@ -212,4 +155,55 @@ chunked n z f = do C.chunksOf n .|
                      C.map V.fromList .|
                      C.scanl f z -- .|
 
+-- | Source of random data points
+dataSource :: (Monad m) =>
+              Int -- ^ number of vectors to generate
+           -> GenT m a -- ^ random generator for the vector components
+           -> C.ConduitT i a (GenT m) ()
+dataSource n gg = flip C.unfoldM 0 $ \i -> do
+  if i == n
+    then pure Nothing
+    else do
+      x <- gg
+      pure $ Just (x, i + 1)
 
+-- | Populate a tree from a data stream
+--
+-- Assumptions on the data source:
+--
+-- * non-empty : contains at least one value
+--
+-- * stationary : each chunk is representative of the whole dataset
+--
+-- * bounded : we wait until the end of the stream to produce a result
+--
+-- Throws 'EmptyResult' if the conduit is empty
+tree :: (MonadThrow m, Inner SVector v) =>
+            Word64 -- ^ random seed
+         -> Int -- ^ max tree depth
+         -> Int -- ^ min leaf size
+         -> Int -- ^ data chunk size
+         -> Double -- ^ nonzero density of projection vectors
+         -> Int -- ^ dimension of projection vectors
+         -> C.ConduitT () (v Double) m () -- ^ data source
+         -> m (RPTree Double (V.Vector (v Double)))
+tree seed maxDepth minLeaf n pnz dim src = do
+  let
+    rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
+  tm <- C.runConduit $ src .|
+                       insertC maxDepth minLeaf n rvs .|
+                       C.last
+  case tm of
+    Just t -> pure $ RPTree rvs t
+    _ -> throwM $ EmptyResult "treeSink"
+
+-- | Incrementally build a tree
+insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
+           Int -- ^ max tree depth
+        -> Int -- ^ min leaf size
+        -> Int -- ^ data chunk size
+        -> V.Vector (u d) -- ^ random projection vectors
+        -> C.ConduitT (v d) (RPT d (V.Vector (v d))) m ()
+insertC maxDepth minLeaf n rvs = chunked n z (insert maxDepth minLeaf rvs)
+  where
+    z = Tip mempty
