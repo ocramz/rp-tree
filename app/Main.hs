@@ -21,8 +21,7 @@ import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, leaves, SVector, DVector, fromListDv, dense, writeCsv)
-import Data.RPTree.Conduit (forest, dataSource)
+import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, leaves, SVector, DVector, fromListDv, dense, writeCsv, forest, dataSource)
 
 main :: IO ()
 main = do

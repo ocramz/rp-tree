@@ -9,6 +9,10 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# options_ghc -Wno-unused-imports #-}
 {-# options_ghc -Wno-unused-top-binds #-}
+
+{-|
+Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces
+-}
 module Data.RPTree (
   -- * Construction
   forest

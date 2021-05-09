@@ -19,10 +19,11 @@ library
   ghc-options:         -Wall
   hs-source-dirs:      src
   exposed-modules:     Data.RPTree
-                       Data.RPTree.Conduit
+
   other-modules:       Data.RPTree.Internal
                        Data.RPTree.Gen
                        Data.RPTree.Draw
+                       Data.RPTree.Conduit
   build-depends:       base >= 4.7 && < 5
                      , boxes
                      , bytestring

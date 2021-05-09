@@ -12,21 +12,22 @@ spec :: Spec
 spec =
   describe "Data.RPTree" $ do
 
-    it "candidates : results should be nonempty" $ do
+    it "knn : results should be close to the query" $ do
       let
         maxLevs = 20
         n = 1000
         ntrees = 10
         minLeaf = 20
         nchunk = 50
-        -- thr = 3 -- voting threshold
+        k = 5
         dim = 2 -- vector dimension
         q = fromListDv [0.1, (- 0.7)] -- query
-        -- dats = sample 1234 $ replicateM n (genGaussMix dim) -- data
         dats = dataSource n (genGaussMix dim) -- data
       tts <- sampleT 1234 $ forest 1234 maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
       let
-        hits = foldMap (`candidates` q) tts -- candidates tts q
+        hits = knn metricL2 k tts q
+      -- let
+      --   hits = foldMap (`candidates` q) tts -- candidates tts q
       -- print hits -- DEBUG
       hits `shouldSatisfy` (not . null)
 
