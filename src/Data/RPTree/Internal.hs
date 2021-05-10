@@ -80,6 +80,17 @@ instance NFData (SVector a)
 
 fromListSv :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
 fromListSv n ll = SV n $ VU.fromList ll
+-- | (Unsafe) Pack a 'SVector' from its vector dimension and components
+--
+-- Note : the relevant invariants are not checked :
+--
+-- * vector components are _assumed_ to be in increasing order
+--
+-- * vector dimension is larger than any component index
+fromVectorSv :: Int -- ^ vector dimension
+             -> VU.Vector (Int, a) -- ^ vector components (in increasing order)
+             -> SVector a
+fromVectorSv = SV
 
 -- | Dense vectors with unboxed components
 newtype DVector a = DV { dvVec :: VU.Vector a } deriving (Eq, Ord, Generic)
@@ -89,6 +100,8 @@ instance (VU.Unbox a, Show a) => Show (DVector a) where
 
 fromListDv :: VU.Unbox a => [a] -> DVector a
 fromListDv ll = DV $ VU.fromList ll
+fromVectorDv :: VU.Vector a -> DVector a
+fromVectorDv = DV
 toListDv :: (VU.Unbox a) => DVector a -> [a]
 toListDv (DV v) = VU.toList v
 
@@ -133,6 +146,9 @@ instance (Serialise d, Serialise a, VU.Unbox d) => Serialise (RPTree d a)
 makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData d) => NFData (RPTree d a)
 
+-- | A random projection forest is an ordered set of 'RPTree's
+--
+-- This supports efficient updates of the ensemble in the streaming/online setting.
 type RPForest d a = IM.IntMap (RPTree d a)
 
 rpTreeData :: Traversal' (RPTree d a) a
@@ -152,6 +168,7 @@ points (RPTree _ t) = fold t
 -- -- points in 2d
 -- data P a = P !a !a deriving (Eq, Show)
 
+-- | Scale a vector
 class Scale v where
   (.*) :: (VU.Unbox a, Num a) => a -> v a -> v a
 instance Scale SVector where

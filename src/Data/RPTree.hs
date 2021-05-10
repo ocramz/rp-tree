@@ -31,9 +31,9 @@ module Data.RPTree (
   -- -- ** RT
   -- , RT
   -- *
-  , SVector, fromListSv
-  , DVector, fromListDv
-  -- * inner product
+  , SVector, fromListSv, fromVectorSv
+  , DVector, fromListDv, fromVectorDv
+  -- * Vector space types
   , Inner(..), Scale(..)
   --   -- ** helpers for implementing Inner instances
   --   -- *** inner product
@@ -85,7 +85,7 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (forest, dataSource)
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, Margin, getMargin, sortByVG)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
 
 import Data.RPTree.Draw (draw, writeCsv)
 

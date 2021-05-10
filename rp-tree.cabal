@@ -41,9 +41,10 @@ library
                      -- , ulid
                      , vector >= 0.12.1.2
                      , vector-algorithms
-                       -- DEBUG
+                     -- -- DEBUG
                      , benchpress
                      , hspec
+                     , mnist-idx-conduit
                      , splitmix >= 0.1.0.3
 
 test-suite spec
@@ -66,9 +67,11 @@ benchmark bench-time
                      , benchpress
                      , conduit
                      , exceptions
+                     , mnist-idx-conduit
                      , mtl
                      , rp-tree
                      , splitmix >= 0.1.0.3
+                     , transformers
                      , vector
 
 executable rp-tree

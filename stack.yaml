@@ -42,6 +42,7 @@ packages:
 #
 extra-deps:
 - splitmix-distributions-0.8.0.0@sha256:252f0c3eb5f58cb27edafe7dc4107de2640b72795e96317420ed862609159abd,1571
+- mnist-idx-conduit-0.2.0.0@sha256:fc25b7b0d1055f52900d599460579f6e58dcc81d907236af489f83f8c2d0a627,2059
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
