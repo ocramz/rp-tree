@@ -32,7 +32,7 @@ main :: IO ()
 main = do -- putStrLn "hello!"
   let
     mnistCfgs = benchConfigs 784
-    mnfpath = "../mnist-idx-conduit/assets/mnist/train-images-idx3-ubyte"
+    mnfpath = "assets/mnist/train-images-idx3-ubyte"
   forM_ mnistCfgs $ \cfg -> do
     stats <- mnistBench mnfpath mnistV0 cfg
     print cfg
