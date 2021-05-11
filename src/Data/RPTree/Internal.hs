@@ -27,7 +27,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 -- containers
-import qualified Data.IntMap as IM (IntMap)
+import qualified Data.IntMap.Strict as IM (IntMap)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- microlens

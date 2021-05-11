@@ -13,7 +13,7 @@ import qualified Data.IntMap as IM (IntMap, insert, toList)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
 -- splitmix-distribitions
-import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli)
+import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli, normal, discrete)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
@@ -96,6 +96,21 @@ replaceInBuffer k imm y = do
   let ix = floor (fromIntegral k * u)
   pure $ IM.insert ix y imm
 
+
+
+
+
+
+
+-- mixture 
+
+
+normal2 :: (Monad m) => GenT m (DVector Double)
+normal2 = do
+  b <- bernoulli 0.5
+  if b
+    then dense 2 $ normal 0 0.5
+    else dense 2 $ normal 2 0.5
 
 
 -- | Generate a sparse random vector with a given nonzero density and components sampled from the supplied random generator

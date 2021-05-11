@@ -26,7 +26,7 @@ import System.Random.SplitMix (initSMGen, unseedSMGen)
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Unboxed as VU (Unbox, Vector, map)
 
-import Data.RPTree (forest, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..))
+import Data.RPTree (tree, forest, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..))
 
 main :: IO ()
 main = do -- putStrLn "hello!"
@@ -34,7 +34,9 @@ main = do -- putStrLn "hello!"
     mnistCfgs = benchConfigs 784
     mnfpath = "assets/mnist/train-images-idx3-ubyte"
   forM_ mnistCfgs $ \cfg -> do
-    stats <- mnistBench mnfpath mnistV0 cfg
+    -- stats <- mnistBench mnfpath mnistV0 cfg
+    -- stats <- mnistFBench mnfpath cfg
+    stats <- mnistTBench mnfpath cfg
     print cfg
     printDetailedStats stats
 
@@ -56,14 +58,25 @@ data BenchConfig = BenchConfig {
   , bcProjDim :: Int
                                } deriving (Show)
 
-
-mnistBench :: Inner SVector v =>
-              FilePath -> v Double -> BenchConfig -> IO Stats
-mnistBench fp q = forestBench (mnist fp) act 3
+-- build and query index
+mnistFBQBench :: Inner SVector v =>
+                 FilePath -> v Double -> BenchConfig -> IO Stats
+mnistFBQBench fp q = forestBench (mnist fp) act 3
   where
     act x = do
       tt <- runResourceT x
       pure $! knn metricL2 10 tt q
+
+-- only build index
+mnistFBench :: FilePath -> BenchConfig -> IO Stats
+mnistFBench fp = forestBench (mnist fp) act 3
+  where
+    act x = runResourceT x >> pure ()
+
+mnistTBench :: FilePath -> BenchConfig -> IO Stats
+mnistTBench fp = treeBench (mnist fp) act 3
+  where
+    act x = runResourceT x >> pure ()
 
 
 mnist :: MonadResource m =>
@@ -94,6 +107,29 @@ forestBench src go n cfg = do
       s <- randSeed
       -- let src' = C.transPipe lift src
       pure $ growForest s cfg src
+
+treeBench :: (Monad m, Inner SVector v) =>
+             C.ConduitT () (v Double) m ()
+          -> (m (RPTree Double (V.Vector (v Double))) -> IO c)
+          -> Int
+          -> BenchConfig
+          -> IO Stats
+treeBench src go n cfg = do
+    (_, wct) <- benchmark n setup (const $ pure ()) go
+    pure wct
+      where
+        setup = do
+          s <- randSeed
+          -- let src' = C.transPipe lift src
+          pure $ growTree s cfg src
+
+growTree :: (Monad m, Inner SVector v) =>
+            Word64
+         -> BenchConfig
+         -> C.ConduitT () (v Double) m ()
+         -> m (RPTree Double (V.Vector (v Double)))
+growTree seed (BenchConfig maxd minl _ chunksize pnz pdim) =
+  tree seed maxd minl chunksize pnz pdim
 
 growForest :: (MonadThrow m, Inner SVector v) =>
               Word64

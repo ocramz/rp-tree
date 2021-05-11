@@ -15,7 +15,7 @@ Random projection trees for approximate nearest neighbor search in high-dimensio
 -}
 module Data.RPTree (
   -- * Construction
-  forest
+  tree, forest
   -- * Query
   , knn
   -- , nearest
@@ -45,6 +45,7 @@ module Data.RPTree (
   -- * Random generation
   -- ** vector
   , sparse, dense
+  , normal2
   -- * Rendering
   , draw
   -- * CSV
@@ -83,8 +84,8 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Conduit (forest, dataSource)
-import Data.RPTree.Gen (sparse, dense)
+import Data.RPTree.Conduit (tree, forest, dataSource)
+import Data.RPTree.Gen (sparse, dense, normal2)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
 
 import Data.RPTree.Draw (draw, writeCsv)
