@@ -19,8 +19,8 @@ library
   ghc-options:         -Wall
   hs-source-dirs:      src
   exposed-modules:     Data.RPTree
-  other-modules:       Data.RPTree.Internal
                        Data.RPTree.Internal.Testing
+  other-modules:       Data.RPTree.Internal
                        Data.RPTree.Gen
                        Data.RPTree.Draw
                        Data.RPTree.Conduit
@@ -73,6 +73,7 @@ benchmark bench-time
                      , mtl
                      , rp-tree
                      , splitmix >= 0.1.0.3
+                     , splitmix-distributions
                      , transformers
                      , vector
 

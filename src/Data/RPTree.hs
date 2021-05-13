@@ -35,11 +35,11 @@ module Data.RPTree (
   , DVector, fromListDv, fromVectorDv
   -- * Vector space types
   , Inner(..), Scale(..)
-  --   -- ** helpers for implementing Inner instances
-  --   -- *** inner product
-  -- , innerSS, innerSD
-  --   -- *** L2 distance
-  -- , metricSSL2, metricSDL2
+    -- ** helpers for implementing Inner instances
+    -- *** inner product
+  , innerSS, innerSD
+    -- *** L2 distance
+  , metricSSL2, metricSDL2
   -- * Conduit
   , dataSource
   -- * Random generation
@@ -52,6 +52,7 @@ module Data.RPTree (
   , writeCsv
   -- * Testing
   , randSeed, BenchConfig(..), normalSparse2
+  , liftC
   ) where
 
 import Control.Monad (replicateM)
@@ -86,7 +87,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Conduit (tree, forest, dataSource)
+import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed)

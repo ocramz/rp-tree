@@ -19,12 +19,13 @@ import Data.RPTree.Gen (dense, sparse, normal2, normalSparse2, normalDense2)
 import Data.RPTree.Conduit (dataSource)
 
 data BenchConfig = BenchConfig {
-  bcMaxTreeDepth :: Int
+  bcDescription :: String
+  , bcMaxTreeDepth :: Int
   , bcMinLeafSize :: Int
   , bcNumTrees :: Int
   , bcChunkSize :: Int
   , bcNZDensity :: Double
-  , bcProjDim :: Int
+  , bcVectorDim :: Int
   , bcDataSize :: Int
                                } deriving (Show)
 

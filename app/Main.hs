@@ -28,6 +28,7 @@ import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
 import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, leaves, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2)
+import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
 main = do -- putStrLn "hello!"
@@ -39,7 +40,7 @@ main = do -- putStrLn "hello!"
     d = 100
     pnz = 0.3
     chunk = 20
-    src = dats n d pnz
+    src = datS n d pnz
     seed = 1234
   (q, tts) <- sampleT seed $ do
     tts <- C.runConduit $

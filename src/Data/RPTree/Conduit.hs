@@ -4,10 +4,11 @@
 {-# options_ghc -Wno-unused-imports #-}
 {-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree.Conduit
-  (tree, 
+  (tree,
   forest
   -- ** helpers
   , dataSource
+  , liftC
   )
 where
 
@@ -16,7 +17,7 @@ import Data.Functor (void)
 import GHC.Word (Word64)
 
 -- conduit
-import qualified Data.Conduit as C (ConduitT, runConduit, yield, await)
+import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
 import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, foldl)
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM, mapAccum)
@@ -40,6 +41,9 @@ import qualified Data.Vector.Storable as VS (Vector)
 import Data.RPTree.Gen (sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
 
+
+liftC :: (Monad m, MonadTrans t) => C.ConduitT i o m r -> C.ConduitT i o (t m) r
+liftC = C.transPipe lift
 
 -- | Populate a tree from a data stream
 --
@@ -69,11 +73,7 @@ tree seed maxDepth minLeaf n pnz dim src = do
   pure $ RPTree rvs t
 
 
--- tree' seed maxDepth minLeaf n pnz dim = do
---   let
---     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
---   t <- insertC maxDepth minLeaf n rvs
---   pure $ RPTree rvs t
+
 
 
 -- | Incrementally build a tree
@@ -118,6 +118,9 @@ forest seed maxd minl ntrees chunksize pnz dim src = do
   ts <- C.runConduit $ src .|
                        insertMultiC maxd minl chunksize rvss
   pure $ IM.intersectionWith RPTree rvss ts
+
+
+
 
 
 
@@ -216,3 +219,36 @@ dataSource n gg = flip C.unfoldM 0 $ \i -> do
 
 
 
+
+-- -- sinks
+
+-- tree' :: (Monad m, Inner SVector v) =>
+--         Word64 -- ^ random seed
+--      -> Int -- ^ max tree depth
+--      -> Int -- ^ min leaf size
+--      -> Int -- ^ data chunk size
+--      -> Double -- ^ nonzero density of projection vectors
+--      -> Int -- ^ dimension of projection vectors
+--       -> C.ConduitT (v Double) o m (RPTree Double (V.Vector (v Double)))
+-- tree' seed maxDepth minLeaf n pnz dim = do
+--   let
+--     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
+--   t <- insertC maxDepth minLeaf n rvs
+--   pure $ RPTree rvs t
+
+-- forest' :: (Monad m, Inner SVector v) =>
+--            Word64 -- ^ random seed
+--         -> Int -- ^ max tree depth
+--         -> Int -- ^ min leaf size
+--         -> Int -- ^ number of trees
+--         -> Int -- ^ data chunk size
+--         -> Double -- ^ nonzero density of projection vectors
+--         -> Int -- ^ dimension of projection vectors
+--         -> C.ConduitT (v Double) o m (IM.IntMap (RPTree Double (V.Vector (v Double))))
+-- forest' seed maxd minl ntrees chunksize pnz dim = do
+--   let
+--     rvss = sample seed $ do
+--       rvs <- replicateM ntrees $ V.replicateM maxd (sparse pnz dim stdNormal)
+--       pure $ IM.fromList $ zip [0 .. ] rvs
+--   ts <- insertMultiC maxd minl chunksize rvss
+--   pure $ IM.intersectionWith RPTree rvss ts

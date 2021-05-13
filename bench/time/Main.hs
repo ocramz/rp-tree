@@ -2,12 +2,14 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Main where
 
+import Control.Exception (bracket)
 import Control.Monad (forM, forM_)
 import Control.Monad.IO.Class (MonadIO(..))
 import GHC.Word (Word8, Word64)
+import System.CPUTime (getCPUTime)
 
--- benchpress
-import Test.BenchPress (Stats(..), benchmark, printDetailedStats)
+-- -- benchpress
+-- import Test.BenchPress (Stats(..), benchmark, printDetailedStats)
 -- conduit
 import Conduit (runResourceT, MonadResource)
 import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
@@ -17,6 +19,8 @@ import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, 
 import Control.Monad.Catch (MonadThrow(..))
 -- mnist-idx-conduit
 import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
+-- splitmix-distributions
+import System.Random.SplitMix.Distributions (GenT, sampleT)
 
 -- mtl
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -25,35 +29,84 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Unboxed as VU (Unbox, Vector, map)
 
-import Data.RPTree (tree, forest, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), BenchConfig(..), randSeed)
+import Data.RPTree (tree, forest, recall, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), normalSparse2, liftC)
+import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datD, datS)
 
 main :: IO ()
 main = do -- putStrLn "hello!"
+  recallBench
+
+
+recallBench :: IO ()
+recallBench = do
   let
-    mnistCfgs = benchConfigs 784
+    cfgs = benchConfigs "binary mixture of sparse Gaussian RVs" 1000
+  forM_ cfgs $ \cfg -> do
+    stats <- recallBench1 cfg
+    print cfg
+    -- printDetailedStats stats
+    print stats
+    pure stats
+  -- print s
+
+-- | MNIST dataset
+mnistBench :: [BenchConfig] -> IO ()
+mnistBench cfgs = do
+  let
+    -- mnistCfgs = benchConfigs 784
     mnfpath = "assets/mnist/train-images-idx3-ubyte"
-  forM_ mnistCfgs $ \cfg -> do
+  forM_ cfgs $ \cfg -> do
     -- stats <- mnistBench mnfpath mnistV0 cfg
     -- stats <- mnistFBench mnfpath cfg
     stats <- mnistTBench mnfpath cfg
     print cfg
-    printDetailedStats stats
+    print stats
+    -- printDetailedStats stats
 
-benchConfigs :: Int -> [BenchConfig]
-benchConfigs pdim = [ BenchConfig maxd minl nt chunk nzd pdim n
-                    | maxd <- [5],
-                      minl <- [100],
-                      nt <- [3],
-                      chunk <- [100],
-                      nzd <- [0.2],
-                      n <- [1000]
-                    ]
+benchConfigs :: String -> Int -> [BenchConfig]
+benchConfigs descr pdim = [ BenchConfig descr maxd minl nt chunk nzd pdim n
+                          | maxd <- [3, 10],
+                            minl <- [20],
+                            nt <- [3],
+                            chunk <- [100],
+                            nzd <- [0.2, 0.5],
+                            n <- [1000]
+                          ]
+
+-- -- Binary mixture
+
+-- | Measure recall @ 10 and mean time
+recallBench1 :: BenchConfig -> IO (Double, Double)
+recallBench1 cfg = forestBench (datS n d pnz) act 2 cfg
+  where
+    n = bcDataSize cfg
+    d = bcVectorDim cfg
+    pnz = bcNZDensity cfg
+    k = 10
+    seed = 1234
+    act x = do
+      (tt, q) <- sampleT seed $ do
+        tt <- x
+        q <- normalSparse2 pnz d
+        pure (tt, q)
+      pure $! recall tt k q
 
 
+-- only build index
+-- binMixFBBench :: BenchConfig -> IO Stats
+binMixFBBench cfg = forestBench (datD n d) act 3 cfg
+  where
+    n = bcDataSize cfg
+    d = bcVectorDim cfg
+    seed = 1234
+    act x = sampleT seed x >> pure ()
+
+
+-- -- MNIST
 
 -- build and query index
-mnistFBQBench :: Inner SVector v =>
-                 FilePath -> v Double -> BenchConfig -> IO Stats
+-- mnistFBQBench :: Inner SVector v =>
+                 -- FilePath -> v Double -> BenchConfig -> IO Stats
 mnistFBQBench fp q cfg = forestBench (mnist fp n) act 3 cfg
   where
     n = bcDataSize cfg
@@ -62,13 +115,13 @@ mnistFBQBench fp q cfg = forestBench (mnist fp n) act 3 cfg
       pure $! knn metricL2 10 tt q
 
 -- only build index
-mnistFBench :: FilePath -> BenchConfig -> IO Stats
+-- mnistFBench :: FilePath -> BenchConfig -> IO Stats
 mnistFBench fp cfg = forestBench (mnist fp n) act 3 cfg
   where
     n = bcDataSize cfg
     act x = runResourceT x >> pure ()
 
-mnistTBench :: FilePath -> BenchConfig -> IO Stats
+-- mnistTBench :: FilePath -> BenchConfig -> IO Stats
 mnistTBench fp cfg = treeBench (mnist fp n) act 3 cfg
   where
     n = bcDataSize cfg
@@ -85,36 +138,38 @@ mnist fp n = C.takeExactly n src
           C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r))
     f (i, x) = (i, toUnitRange x)
 
+
+-- -- UTILS
+
 toUnitRange :: Word8 -> Double
 toUnitRange w8 = fromIntegral w8 / 255
 
 
 -- | runs a benchmark on a newly created RPForest initialized with a random seed
-forestBench ::
-  (MonadThrow m, Inner SVector v) =>
-  C.ConduitT () (v Double) m ()
-  -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
-  -> Int -- ^ number of replicates
-  -> BenchConfig
-  -> IO Stats -- ^ wall-clock time measurement only
-forestBench src go n cfg = do
-  (_, wct) <- benchmark n setup (const $ pure ()) go
-  pure wct
+forestBench :: (MonadThrow m, Inner SVector v) =>
+               C.ConduitT () (v Double) m ()
+            -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
+            -> Int  -- ^ number of replicates
+            -> BenchConfig
+            -> IO (c, Double) -- ^ result, mean wall-clock time measurement
+forestBench src go n cfg = benchmark n setup (const $ pure ()) go
   where
     setup = do
       s <- randSeed
       -- let src' = C.transPipe lift src
       pure $ growForest s cfg src
 
+
+
+
+
 treeBench :: (Monad m, Inner SVector v) =>
              C.ConduitT () (v Double) m ()
           -> (m (RPTree Double (V.Vector (v Double))) -> IO c)
           -> Int
           -> BenchConfig
-          -> IO Stats
-treeBench src go n cfg = do
-    (_, wct) <- benchmark n setup (const $ pure ()) go
-    pure wct
+          -> IO (c, Double)
+treeBench src go n cfg = benchmark n setup (const $ pure ()) go
       where
         setup = do
           s <- randSeed
@@ -126,18 +181,57 @@ growTree :: (Monad m, Inner SVector v) =>
          -> BenchConfig
          -> C.ConduitT () (v Double) m ()
          -> m (RPTree Double (V.Vector (v Double)))
-growTree seed (BenchConfig maxd minl _ chunksize pnz pdim _) =
+growTree seed (BenchConfig _ maxd minl _ chunksize pnz pdim _) =
   tree seed maxd minl chunksize pnz pdim
 
-growForest :: (MonadThrow m, Inner SVector v) =>
-              Word64
-           -> BenchConfig
-           -> C.ConduitT () (v Double) m ()
-           -> m (RPForest Double (V.Vector (v Double)))
-growForest seed (BenchConfig maxd minl ntrees chunksize pnz pdim _) =
+-- growForest :: (MonadThrow m, Inner SVector v) =>
+--               Word64
+--            -> BenchConfig
+--            -> C.ConduitT () (v Double) m ()
+--            -> m (RPForest Double (V.Vector (v Double)))
+growForest seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _) =
   forest seed maxd minl ntrees chunksize pnz pdim
 
+growForest' seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _) =
+  forest' seed maxd minl ntrees chunksize pnz pdim
 
+
+
+
+
+benchmark :: Int -> IO a -> (a -> IO b) -> (a -> IO c) -> IO (c, Double)
+benchmark iters setup teardown action =
+  if iters < 1
+    then error "benchmark: iters must be greater than 0"
+    else do
+      (vals, cpuTimes) <- unzip `fmap` go iters
+      let tcm        = mean cpuTimes
+          v = head vals
+      return (v, tcm)
+      where
+        go 0 = return []
+        go n = do
+          elapsed <- bracket setup teardown $ \a -> do
+            startCpu <- getCPUTime
+            x <- action a
+            endCpu <- getCPUTime
+            return (x
+                   ,picosToMillis $! endCpu - startCpu)
+          timings <- go $! n - 1
+          return $ elapsed : timings
+
+
+-- | Converts picoseconds to milliseconds.
+picosToMillis :: Integer -> Double
+picosToMillis t = realToFrac t / (10^(9 :: Int))
+
+-- | Numerically stable mean.
+mean :: Floating a => [a] -> a
+mean = go 0 0
+    where
+      go :: Floating a => a -> Int -> [a] -> a
+      go m _ []     = m
+      go m n (x:xs) = go (m + (x - m) / fromIntegral (n + 1)) (n + 1) xs
 
 
 
