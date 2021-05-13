@@ -288,7 +288,7 @@ sumSD = binSD (-)
 -- | Vector sum
 sumSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
          u (Int, a) -> v (Int, a) -> u (Int, a)
-sumSS = binSS (+) 0 
+sumSS = binSS (+) 0
 
 -- | Vector difference
 diffSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
@@ -335,6 +335,7 @@ binSD f vv1 vv2 = VG.unfoldr go 0
             y = f xl xr
 
 
+{-# SCC partitionAtMedian #-}
 -- | Partition the data wrt the median value of the inner product
 partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
                      u a -- ^ projection vector

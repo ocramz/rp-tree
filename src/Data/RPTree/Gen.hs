@@ -13,7 +13,7 @@ import qualified Data.IntMap as IM (IntMap, insert, toList)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.State (MonadState(..), modify)
 -- splitmix-distribitions
-import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli, normal, discrete)
+import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli, exponential, normal, discrete, categorical)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
@@ -102,8 +102,34 @@ replaceInBuffer k imm y = do
 
 
 
--- mixture 
+-- mixtures
 
+mixtureN :: Monad m => [(Double, GenT m b)] -> GenT m b
+mixtureN pgs = go
+  where
+    (ps, gs) = unzip pgs
+    go = do
+      miix <- categorical ps
+      case miix of
+        Nothing -> gs !! 0
+        Just i  -> do
+          let p = gs !! i
+          p
+
+
+normalSparse2 :: Monad m => Double -> Int -> GenT m (SVector Double)
+normalSparse2 pnz d = do
+  b <- bernoulli 0.5
+  if b
+    then sparse pnz d (normal 0 0.5)
+    else sparse pnz d (normal 2 0.5)
+
+normalDense2 :: Monad m => Int -> GenT m (DVector Double)
+normalDense2 d = do
+  b <- bernoulli 0.5
+  if b
+    then dense d (normal 0 0.5)
+    else dense d (normal 2 0.5)
 
 normal2 :: (Monad m) => GenT m (DVector Double)
 normal2 = do

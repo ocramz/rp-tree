@@ -12,7 +12,7 @@ import Test.BenchPress (Stats(..), benchmark, printDetailedStats)
 import Conduit (runResourceT, MonadResource)
 import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
 import Data.Conduit ((.|))
-import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
+import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print, takeExactly)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
 -- mnist-idx-conduit
@@ -20,13 +20,12 @@ import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 
 -- mtl
 import Control.Monad.Trans.Class (MonadTrans(..))
--- splitmix
-import System.Random.SplitMix (initSMGen, unseedSMGen)
+
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Unboxed as VU (Unbox, Vector, map)
 
-import Data.RPTree (tree, forest, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..))
+import Data.RPTree (tree, forest, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), BenchConfig(..), randSeed)
 
 main :: IO ()
 main = do -- putStrLn "hello!"
@@ -41,50 +40,49 @@ main = do -- putStrLn "hello!"
     printDetailedStats stats
 
 benchConfigs :: Int -> [BenchConfig]
-benchConfigs pdim = [ BenchConfig maxd minl nt chunk nzd pdim
-                    | maxd <- [5, 10],
+benchConfigs pdim = [ BenchConfig maxd minl nt chunk nzd pdim n
+                    | maxd <- [5],
                       minl <- [100],
-                      nt <- [3, 5],
-                      chunk <- [1000],
-                      nzd <- [0.2, 0.5, 0.8]
+                      nt <- [3],
+                      chunk <- [100],
+                      nzd <- [0.2],
+                      n <- [1000]
                     ]
 
-data BenchConfig = BenchConfig {
-  bcMaxTreeDepth :: Int
-  , bcMinLeafSize :: Int
-  , bcNumTrees :: Int
-  , bcChunkSize :: Int
-  , bcNZDensity :: Double
-  , bcProjDim :: Int
-                               } deriving (Show)
+
 
 -- build and query index
 mnistFBQBench :: Inner SVector v =>
                  FilePath -> v Double -> BenchConfig -> IO Stats
-mnistFBQBench fp q = forestBench (mnist fp) act 3
+mnistFBQBench fp q cfg = forestBench (mnist fp n) act 3 cfg
   where
+    n = bcDataSize cfg
     act x = do
       tt <- runResourceT x
       pure $! knn metricL2 10 tt q
 
 -- only build index
 mnistFBench :: FilePath -> BenchConfig -> IO Stats
-mnistFBench fp = forestBench (mnist fp) act 3
+mnistFBench fp cfg = forestBench (mnist fp n) act 3 cfg
   where
+    n = bcDataSize cfg
     act x = runResourceT x >> pure ()
 
 mnistTBench :: FilePath -> BenchConfig -> IO Stats
-mnistTBench fp = treeBench (mnist fp) act 3
+mnistTBench fp cfg = treeBench (mnist fp n) act 3 cfg
   where
+    n = bcDataSize cfg
     act x = runResourceT x >> pure ()
 
 
 mnist :: MonadResource m =>
          FilePath -- path to uncompressed MNIST IDX data file
+      -> Int -- number of data items
       -> C.ConduitT a (SVector Double) m ()
-mnist fp = sourceIdxSparse fp .|
-  C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r))
+mnist fp n = C.takeExactly n src
   where
+    src = sourceIdxSparse fp .|
+          C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r))
     f (i, x) = (i, toUnitRange x)
 
 toUnitRange :: Word8 -> Double
@@ -128,7 +126,7 @@ growTree :: (Monad m, Inner SVector v) =>
          -> BenchConfig
          -> C.ConduitT () (v Double) m ()
          -> m (RPTree Double (V.Vector (v Double)))
-growTree seed (BenchConfig maxd minl _ chunksize pnz pdim) =
+growTree seed (BenchConfig maxd minl _ chunksize pnz pdim _) =
   tree seed maxd minl chunksize pnz pdim
 
 growForest :: (MonadThrow m, Inner SVector v) =>
@@ -136,11 +134,10 @@ growForest :: (MonadThrow m, Inner SVector v) =>
            -> BenchConfig
            -> C.ConduitT () (v Double) m ()
            -> m (RPForest Double (V.Vector (v Double)))
-growForest seed (BenchConfig maxd minl ntrees chunksize pnz pdim) =
+growForest seed (BenchConfig maxd minl ntrees chunksize pnz pdim _) =
   forest seed maxd minl ntrees chunksize pnz pdim
 
-randSeed :: MonadIO m => m Word64
-randSeed = liftIO (fst . unseedSMGen <$> initSMGen)
+
 
 
 

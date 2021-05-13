@@ -65,8 +65,15 @@ tree seed maxDepth minLeaf n pnz dim src = do
   let
     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
   t <- C.runConduit $ src .|
-                       insertC maxDepth minLeaf n rvs
+                      insertC maxDepth minLeaf n rvs
   pure $ RPTree rvs t
+
+
+-- tree' seed maxDepth minLeaf n pnz dim = do
+--   let
+--     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
+--   t <- insertC maxDepth minLeaf n rvs
+--   pure $ RPTree rvs t
 
 
 -- | Incrementally build a tree
@@ -130,6 +137,7 @@ insertMultiC maxd minl n rvss = chunkedAccum n im0 (insertMulti maxd minl rvss)
     z = Tip mempty
 
 
+{-# SCC insertMulti #-}
 insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
                Int
             -> Int
@@ -142,6 +150,7 @@ insertMulti maxd minl rvss tacc xs =
                                       Just !rvs -> insert maxd minl rvs t xs
                                       _        -> t
 
+{-# SCC insert #-}
 insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size

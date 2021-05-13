@@ -3,9 +3,12 @@
 {-# options_ghc -Wno-unused-imports #-}
 module Main where
 
+import Control.Monad (replicateM)
 import Data.Foldable (fold)
+import Data.Functor (void)
+
 -- conduit
-import qualified Data.Conduit as C (ConduitT, runConduit, yield, await)
+import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
 import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print)
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
@@ -13,23 +16,43 @@ import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
+-- mnist-idx-conduit
+import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 -- splitmix-distributions
 import System.Random.SplitMix.Distributions (Gen, GenT, sample, sampleT, bernoulli, normal)
 -- transformers
 import Control.Monad.Trans.State.Lazy (State, get, put, evalState)
+import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, leaves, SVector, DVector, fromListDv, dense, writeCsv, forest, dataSource, normal2)
+import Data.RPTree (knn, candidates, Inner(..), RPTree, RPForest, leaves, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2)
 
 main :: IO ()
-main = do
+main = do -- putStrLn "hello!"
   let
-    n = 10000
-  -- renderTree0 n
-  -- renderTree1 n
-  undefined -- FIXME
+    n = 1000
+    maxd = 3
+    minl = 10
+    ntree = 10
+    d = 100
+    pnz = 0.3
+    chunk = 20
+    src = dats n d pnz
+    seed = 1234
+  (q, tts) <- sampleT seed $ do
+    tts <- C.runConduit $
+           forest seed maxd minl ntree chunk pnz d (liftC src)
+    q <- sparse 0.3 d (normal 0.1 0.6)
+    pure (q, tts)
+  let
+    res = knn metricL2 1 tts q
+  print res
+
+
+liftC = C.transPipe lift
+
 
 
 -- renderTree0 :: Int -> IO ()
