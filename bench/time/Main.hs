@@ -160,6 +160,27 @@ forestBench src go n cfg = benchmark n setup (const $ pure ()) go
       pure $ growForest s cfg src
 
 
+-- -- forestBenchRes :: (MonadResource m, Inner SVector v) =>
+-- --                   C.ConduitT
+-- --                   ()
+-- --                   (v Double)
+-- --                   m
+-- --                   ()
+-- --                -> (RPForest Double (V.Vector (v Double)) -> IO c)
+-- --                -> Int
+-- --                -> BenchConfig
+-- --                -> IO (c, Double)
+forestBenchRes src go n cfg = benchmarkM n setup go
+  where
+    setup = do
+      s <- randSeed
+      runResourceT $ growForest s cfg src
+
+forestBenchGen seed src go n cfg = benchmarkM n setup go
+  where
+    setup = do
+      s <- randSeed
+      sampleT seed $ growForest s cfg src
 
 
 
@@ -184,28 +205,26 @@ growTree :: (Monad m, Inner SVector v) =>
 growTree seed (BenchConfig _ maxd minl _ chunksize pnz pdim _) =
   tree seed maxd minl chunksize pnz pdim
 
--- growForest :: (MonadThrow m, Inner SVector v) =>
---               Word64
---            -> BenchConfig
---            -> C.ConduitT () (v Double) m ()
---            -> m (RPForest Double (V.Vector (v Double)))
+growForest :: (Monad m, Inner SVector v) =>
+              Word64
+           -> BenchConfig
+           -> C.ConduitT () (v Double) m ()
+           -> m (RPForest Double (V.Vector (v Double)))
 growForest seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _) =
   forest seed maxd minl ntrees chunksize pnz pdim
 
-growForest' seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _) =
-  forest' seed maxd minl ntrees chunksize pnz pdim
+-- growForest' seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _) =
+--   forest' seed maxd minl ntrees chunksize pnz pdim
 
 
-
-
-
+-- -- adapted from 'benchpress', until https://github.com/WillSewell/benchpress/issues/9 is merged
 benchmark :: Int -> IO a -> (a -> IO b) -> (a -> IO c) -> IO (c, Double)
 benchmark iters setup teardown action =
   if iters < 1
     then error "benchmark: iters must be greater than 0"
     else do
       (vals, cpuTimes) <- unzip `fmap` go iters
-      let tcm        = mean cpuTimes
+      let tcm = mean cpuTimes
           v = head vals
       return (v, tcm)
       where
@@ -215,6 +234,29 @@ benchmark iters setup teardown action =
             startCpu <- getCPUTime
             x <- action a
             endCpu <- getCPUTime
+            return (x
+                   ,picosToMillis $! endCpu - startCpu)
+          timings <- go $! n - 1
+          return $ elapsed : timings
+
+benchmarkM :: (MonadIO m) =>
+              Int -> m t -> (t -> m a2) -> m (a2, Double)
+benchmarkM iters setup action =
+  if iters < 1
+    then error "benchmark: iters must be greater than 0"
+    else do
+      (vals, cpuTimes) <- unzip `fmap` go iters
+      let tcm = mean cpuTimes
+          v = head vals
+      return (v, tcm)
+      where
+        go 0 = return []
+        go n = do
+          a <- setup
+          elapsed <- do
+            startCpu <- liftIO getCPUTime
+            x <- action a
+            endCpu <- liftIO getCPUTime
             return (x
                    ,picosToMillis $! endCpu - startCpu)
           timings <- go $! n - 1
