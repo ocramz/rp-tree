@@ -11,6 +11,7 @@ copyright:           2021 Marco Zocca
 category:            Data Mining, Data Structures, Machine Learning, Data
 build-type:          Simple
 extra-source-files:  README.md
+                     Changelog.md
 cabal-version:       >=1.10
 tested-with:         GHC == 8.10.4
 

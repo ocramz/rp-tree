@@ -10,6 +10,7 @@
 {-# language MultiParamTypeClasses #-}
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language TemplateHaskell #-}
+{-# LANGUAGE BangPatterns        #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
 
@@ -17,7 +18,7 @@ import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.ST (runST)
 import Data.Function ((&))
-import Data.Foldable (fold, foldl')
+import Data.Foldable (fold, foldl', toList)
 import Data.Functor.Identity (Identity(..))
 import Data.List (nub)
 import Data.Monoid (Sum(..))
@@ -26,8 +27,10 @@ import Data.Semigroup (Min(..), Max(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
+-- bytestring
+import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 -- containers
-import qualified Data.IntMap.Strict as IM (IntMap)
+import qualified Data.IntMap.Strict as IM (IntMap, fromList)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- microlens
@@ -36,7 +39,7 @@ import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatur
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- serialise
-import Codec.Serialise (Serialise(..))
+import Codec.Serialise (Serialise(..), serialise, deserialiseOrFail)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
@@ -47,6 +50,13 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
+-- | Pair a datum with a vector embedding
+data Embed v e a = Embed {
+  eEmbed :: !(v e) -- ^ the embedding is a vector
+  , eData :: !a
+                       } deriving (Eq, Ord, Show, Generic, Functor)
+instance (NFData (v e), NFData a) => NFData (Embed v e a)
+instance (Serialise (v e), Serialise a) => Serialise (Embed v e a)
 
 -- | Exceptions
 data RPTError =
@@ -59,8 +69,8 @@ instance Exception RPTError
 
 -- | Bounds around the cutting plane
 data Margin a = Margin {
-  cMarginLow :: Max a -- ^ lower bound on the cut point
-  , cMarginHigh :: Min a -- ^ upper bound
+  cMarginLow :: !(Max a) -- ^ lower bound on the cut point
+  , cMarginHigh :: !(Min a) -- ^ upper bound
                    } deriving (Eq, Show, Generic)
 instance (Serialise a) => Serialise (Margin a)
 getMargin :: Margin a -> (a, a)
@@ -72,7 +82,8 @@ instance (Ord a) => Semigroup (Margin a) where
 
 
 -- | Sparse vectors with unboxed components
-data SVector a = SV { svDim :: !Int, svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
+data SVector a = SV { svDim :: {-# UNPACK #-} !Int
+                    , svVec :: VU.Vector (Int, a) } deriving (Eq, Ord, Generic)
 instance (VU.Unbox a, Serialise a) => Serialise (SVector a)
 instance (VU.Unbox a, Show a) => Show (SVector a) where
   show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
@@ -122,11 +133,11 @@ instance (NFData (v d), NFData d, NFData a) => NFData (RT v d a)
 -- one projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 data RPT d a =
   Bin {
-  _rpThreshold :: !d
-  , _rpMargin :: !(Margin d)
+  _rpThreshold ::  !d
+  , _rpMargin :: {-# UNPACK #-} !(Margin d)
   , _rpL :: !(RPT d a)
   , _rpR :: !(RPT d a) }
-  | Tip { _rpData :: a }
+  | Tip { _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 instance (Serialise a, Serialise d) => Serialise (RPT d a)
 makeLensesFor [("_rpData", "rpData")] ''RPT
@@ -141,7 +152,7 @@ instance (NFData v, NFData a) => NFData (RPT v a)
 -- One projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 data RPTree d a = RPTree {
   _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
-  , _rpTree :: RPT d a
+  , _rpTree :: !(RPT d a)
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 instance (Serialise d, Serialise a, VU.Unbox d) => Serialise (RPTree d a)
 makeLensesFor [("_rpTree", "rpTree")] ''RPTree
@@ -151,6 +162,20 @@ instance (NFData a, NFData d) => NFData (RPTree d a)
 --
 -- This supports efficient updates of the ensemble in the streaming/online setting.
 type RPForest d a = IM.IntMap (RPTree d a)
+
+-- | Serialise each tree in the 'RPForest' as a separate bytestring
+serialiseRPForest :: (Serialise d, Serialise a, VU.Unbox d) =>
+                     RPForest d a
+                  -> [LBS.ByteString] -- ^ the order is undefined
+serialiseRPForest tt = serialise `map` toList tt
+
+-- | Deserialise each tree in the 'RPForest' from a separate bytestring and reconstruct
+deserialiseRPForest :: (Serialise d, Serialise a, VU.Unbox d) =>
+                       [LBS.ByteString]
+                    -> Either String (RPForest d a) -- ^ the order is undefined
+deserialiseRPForest bss = case deserialiseOrFail `traverse` bss of
+  Left e -> Left (show e)
+  Right xs -> Right $ IM.fromList $ zip [0 ..] xs
 
 rpTreeData :: Traversal' (RPTree d a) a
 rpTreeData = rpTree . rpData

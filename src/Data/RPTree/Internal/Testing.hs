@@ -27,6 +27,7 @@ data BenchConfig = BenchConfig {
   , bcNZDensity :: Double
   , bcVectorDim :: Int
   , bcDataSize :: Int
+  , bcNumQueryPoints :: Int
                                } deriving (Show)
 
 randSeed :: MonadIO m => m Word64

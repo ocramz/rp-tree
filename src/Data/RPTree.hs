@@ -18,18 +18,16 @@ module Data.RPTree (
   tree, forest
   -- * Query
   , knn
-  -- , nearest
+  -- * I/O
+  , serialiseRPForest
+  , deserialiseRPForest
   -- * Validation
-  , recall
+  , recallWith
   -- * Access
   , levels, points, leaves, candidates
   -- * Types
   -- ** RPTree
   , RPTree, RPForest
-  -- -- *** internal
-  -- , RPT
-  -- -- ** RT
-  -- , RT
   -- *
   , SVector, fromListSv, fromVectorSv
   , DVector, fromListDv, fromVectorDv
@@ -48,6 +46,7 @@ module Data.RPTree (
   -- ** vector
   , sparse, dense
   , normal2
+
   -- * Rendering
   , draw
   -- * CSV
@@ -91,7 +90,7 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed)
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -109,32 +108,37 @@ knn distf k tts q = sortByVG fst cs
 
 
 -- | average recall-at-k, computed over a set of trees
-recall :: (Inner u v, Inner SVector v, VU.Unbox a, Ord a,
-            Ord (u a), Floating a) =>
-          RPForest a (V.Vector (u a))
-       -> Int -- ^ k : number of nearest neighbors to consider
-       -> v a -- ^ query point
-       -> Double
-recall tt k q = sum rs / fromIntegral n
+recallWith :: (Inner SVector v, VU.Unbox a, Fractional a, Ord a, Ord d, Ord p) =>
+              (p -> v a -> d)
+           -> RPForest a (V.Vector p)
+           -> Int -- ^ k : number of nearest neighbors to consider
+           -> v a -- ^ query point
+           -> a
+recallWith distf tt k q = sum rs / fromIntegral n
   where
-    rs = fmap (\t -> recall1 t k q) tt
+    rs = fmap (\t -> recallWith1 distf t k q) tt
     n = length tt
 
-recall1 :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
-          RPTree a (V.Vector (u a))
-       -> Int -- ^ k : number of nearest neighbors to consider
-       -> v a  -- ^ query point
-       -> Double
-recall1 = recallWith metricL2
+-- -- | Recall computed wrt the Euclidean distance
+-- recallEuclid :: (Inner SVector v, Inner u v, VU.Unbox a, Ord a, Ord (u a), Floating a) =>
+--                 RPTree a (V.Vector (u a))
+--              -> Int -- ^ k : number of nearest neighbors to consider
+--              -> v a  -- ^ query point
+--              -> Double
+-- recallEuclid = recallWith metricL2
 
-recallWith :: (Fractional a1, Inner SVector v, Ord d, VU.Unbox d,
+recallWith1 :: (Fractional a1, Inner SVector v, Ord d, VU.Unbox d,
                 Num d, Ord a3, Ord a2) =>
-              (a2 -> v d -> a3) -> RPTree d (V.Vector a2) -> Int -> v d -> a1
-recallWith distf tt k q = fromIntegral (length aintk) / fromIntegral k
+              (a2 -> v d -> a3) -- ^ distance function
+           -> RPTree d (V.Vector a2)
+           -> Int -- ^ k : number of nearest neighbors to consider
+           -> v d -- ^ query point
+           -> a1
+recallWith1 distf tt k q = fromIntegral (length aintk) / fromIntegral k
   where
     xs = points tt
     dists = sortBy (comparing snd) $ toList $ fmap (\x -> (x, x `distf` q)) xs
-    kk = S.fromList $ map fst $ take k dists
+    kk = S.fromList $ map fst $ take k dists -- first k nn's
     aa = set $ candidates tt q
     aintk = aa `S.intersection` kk
 
