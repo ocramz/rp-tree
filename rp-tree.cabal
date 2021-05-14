@@ -68,6 +68,7 @@ benchmark bench-time
   build-depends:       base
                      , benchpress
                      , conduit
+                     , deepseq >= 1.4.4.0
                      , exceptions
                      , mnist-idx-conduit
                      , mtl

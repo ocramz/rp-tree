@@ -12,9 +12,11 @@ import System.CPUTime (getCPUTime)
 -- import Test.BenchPress (Stats(..), benchmark, printDetailedStats)
 -- conduit
 import Conduit (runResourceT, MonadResource)
-import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
+import qualified Data.Conduit as C (ConduitT, runConduit, runConduitRes, yield, await, transPipe)
 import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print, takeExactly)
+-- deepseq
+import Control.DeepSeq (NFData(..), force)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
 -- mnist-idx-conduit
@@ -77,56 +79,57 @@ benchConfigs descr pdim = [ BenchConfig descr maxd minl nt chunk nzd pdim n
 
 -- | Measure recall @ 10 and mean time
 recallBench1 :: BenchConfig -> IO (Double, Double)
-recallBench1 cfg = forestBench (datS n d pnz) act 2 cfg
+recallBench1 cfg = forestBench (datS n d nzData) act 2 cfg
   where
     n = bcDataSize cfg
     d = bcVectorDim cfg
-    pnz = bcNZDensity cfg
-    k = 10
+    -- pnz = bcNZDensity cfg -- nz density of proj vectors
+    nzData = 0.8 -- nz density of data 
+    k = 10 -- number of ANN's to retudn
     seed = 1234
     act x = do
       (tt, q) <- sampleT seed $ do
         tt <- x
-        q <- normalSparse2 pnz d
+        q <- normalSparse2 nzData d
         pure (tt, q)
       pure $! recall tt k q
 
 
--- only build index
--- binMixFBBench :: BenchConfig -> IO Stats
-binMixFBBench cfg = forestBench (datD n d) act 3 cfg
-  where
-    n = bcDataSize cfg
-    d = bcVectorDim cfg
-    seed = 1234
-    act x = sampleT seed x >> pure ()
+-- -- only build index
+-- -- binMixFBBench :: BenchConfig -> IO Stats
+-- binMixFBBench cfg = forestBench (datD n d) act 3 cfg
+--   where
+--     n = bcDataSize cfg
+--     d = bcVectorDim cfg
+--     seed = 1234
+--     act x = sampleT seed x >> pure ()
 
 
 -- -- MNIST
 
--- build and query index
--- mnistFBQBench :: Inner SVector v =>
-                 -- FilePath -> v Double -> BenchConfig -> IO Stats
-mnistFBQBench fp q cfg = forestBench (mnist fp n) act 3 cfg
-  where
-    n = bcDataSize cfg
-    act x = do
-      tt <- runResourceT x
-      pure $! knn metricL2 10 tt q
+-- -- build and query index
+-- -- mnistFBQBench :: Inner SVector v =>
+--                  -- FilePath -> v Double -> BenchConfig -> IO Stats
+-- mnistFBQBench fp q cfg = forestBench (mnist fp n) act 3 cfg
+--   where
+--     n = bcDataSize cfg
+--     act x = do
+--       tt <- runResourceT x
+--       pure $! knn metricL2 10 tt q
 
--- only build index
--- mnistFBench :: FilePath -> BenchConfig -> IO Stats
-mnistFBench fp cfg = forestBench (mnist fp n) act 3 cfg
-  where
-    n = bcDataSize cfg
-    act x = runResourceT x >> pure ()
+-- -- only build index
+-- -- mnistFBench :: FilePath -> BenchConfig -> IO Stats
+-- mnistFBench fp cfg = forestBench (mnist fp n) act 3 cfg
+--   where
+--     n = bcDataSize cfg
+--     act x = runResourceT x >> pure ()
 
 -- mnistTBench :: FilePath -> BenchConfig -> IO Stats
+mnistTBench :: FilePath -> BenchConfig -> IO ((), Double)
 mnistTBench fp cfg = treeBench (mnist fp n) act 3 cfg
   where
     n = bcDataSize cfg
     act x = runResourceT x >> pure ()
-
 
 mnist :: MonadResource m =>
          FilePath -- path to uncompressed MNIST IDX data file
@@ -176,11 +179,19 @@ forestBenchRes src go n cfg = benchmarkM n setup go
       s <- randSeed
       runResourceT $ growForest s cfg src
 
+forestBenchGen :: (MonadIO m, Inner SVector v, NFData (v Double)) =>
+                  Word64
+               -> C.ConduitT () (v Double) (GenT m) ()
+               -> (RPForest Double (V.Vector (v Double)) -> m a2)
+               -> Int
+               -> BenchConfig
+               -> m (a2, Double)
 forestBenchGen seed src go n cfg = benchmarkM n setup go
   where
     setup = do
       s <- randSeed
-      sampleT seed $ growForest s cfg src
+      x <- sampleT seed $ growForest s cfg src
+      pure $ force x
 
 
 

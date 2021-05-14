@@ -97,6 +97,7 @@ newtype DVector a = DV { dvVec :: VU.Vector a } deriving (Eq, Ord, Generic)
 instance (VU.Unbox a, Serialise a) => Serialise (DVector a)
 instance (VU.Unbox a, Show a) => Show (DVector a) where
   show (DV vv) = unwords ["DV", show (VU.toList vv)]
+instance NFData (DVector a)
 
 fromListDv :: VU.Unbox a => [a] -> DVector a
 fromListDv ll = DV $ VU.fromList ll
@@ -319,7 +320,7 @@ binSS f z vv1 vv2 = VG.unfoldr go (0, 0)
             GT -> Just ((ir, f z  xr), (i1     , succ i2))
 
 
-
+-- FIXME the return type of a sparse-dense binary operation depends on the operator itself (S * D = S , S + D = D ), so 'binSD' must be changed
 binSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a) =>
          (a -> a -> a) -> u (Int, a) -> v a -> u (Int, a)
 binSD f vv1 vv2 = VG.unfoldr go 0
@@ -347,9 +348,7 @@ partitionAtMedian r xs = (thr, margin, ll, rr)
     -- (pjl, pjr) = (VG.head inns, VG.last inns) -- (min, max) inner product values
     (mgl, mgr) = (inns VG.! (nh - 1), inns VG.! (nh + 1))
     margin = Margin (Max mgl) (Min mgr)
-    -- marginL = mgl / (pjr - pjl) -- lower bound of margin, normalized to range
-    -- marginR = mgr / (pjr - pjl) -- upper bound of margin, normalized to range
-    thr = inns VG.! nh -- inner product threshold
+    thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
     n = VG.length xs -- total data size
     nh = n `div` 2 -- size of left partition
     projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs

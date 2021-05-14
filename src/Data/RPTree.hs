@@ -37,9 +37,11 @@ module Data.RPTree (
   , Inner(..), Scale(..)
     -- ** helpers for implementing Inner instances
     -- *** inner product
-  , innerSS, innerSD
+  , innerSS, innerSD, innerDD
     -- *** L2 distance
   , metricSSL2, metricSDL2
+  -- *** Scale
+  , scaleS, scaleD
   -- * Conduit
   , dataSource
   -- * Random generation
@@ -89,7 +91,7 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), (/.), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, leaves, RT(..), Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed)
 import Data.RPTree.Draw (draw, writeCsv)
 
@@ -158,11 +160,13 @@ candidates (RPTree rvs tt) x = go 0 tt
         r = rvs VG.! ixLev
         proj = r `inner` x
         i' = succ ixLev
+        dl = abs (mglo - proj) -- left margin
+        dr = abs (mghi - proj) -- right margin
       if | proj < thr &&
-           mglo > mghi -> go i' ltree <> go i' rtree
+           dl > dr -> go i' ltree <> go i' rtree
          | proj < thr  -> go i' ltree
          | proj > thr &&
-           mglo < mghi -> go i' ltree <> go i' rtree
+           dl < dr -> go i' ltree <> go i' rtree
          | otherwise   -> go i' rtree
 
 
