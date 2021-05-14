@@ -365,8 +365,8 @@ binSD f vv1 vv2 = VG.unfoldr go 0
 -- | Partition the data wrt the median value of the inner product
 partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
                      u a -- ^ projection vector
-                  -> V.Vector (v a) -- ^ dataset (3 or more elements)
-                  -> (a, Margin a, V.Vector (v a), V.Vector (v a)) -- ^ median, margin, smaller, larger
+                  -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
+                  -> (a, Margin a, V.Vector (Embed v a x), V.Vector (Embed v a x)) -- ^ median, margin, smaller, larger
 partitionAtMedian r xs = (thr, margin, ll, rr)
   where
     (ll, rr) = (VG.take nh xs', VG.drop nh xs')
@@ -376,7 +376,7 @@ partitionAtMedian r xs = (thr, margin, ll, rr)
     thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
     n = VG.length xs -- total data size
     nh = n `div` 2 -- size of left partition
-    projs = sortByVG snd $ VG.map (\x -> (x, r `inner` x)) xs
+    projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
     (xs', inns) = VG.unzip projs
 
 sortByVG :: (VG.Vector v a, Ord b) => (a -> b) -> v a -> v a

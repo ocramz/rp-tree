@@ -4,7 +4,8 @@
 {-# options_ghc -Wno-unused-imports #-}
 {-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree.Conduit
-  (tree,
+  (
+    tree,
   forest
   -- ** helpers
   , dataSource
@@ -39,7 +40,7 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..))
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..), Embed(..))
 
 
 liftC :: (Monad m, MonadTrans t) => C.ConduitT i o m r -> C.ConduitT i o (t m) r
@@ -63,8 +64,8 @@ tree :: (Monad m, Inner SVector v) =>
      -> Int -- ^ data chunk size
      -> Double -- ^ nonzero density of projection vectors
      -> Int -- ^ dimension of projection vectors
-     -> C.ConduitT () (v Double) m () -- ^ data source
-     -> m (RPTree Double (V.Vector (v Double)))
+     -> C.ConduitT () (Embed v Double x) m () -- ^ data source
+     -> m (RPTree Double (V.Vector (Embed v Double x)))
 tree seed maxDepth minLeaf n pnz dim src = do
   let
     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
@@ -82,7 +83,11 @@ insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
         -> Int -- ^ min leaf size
         -> Int -- ^ data chunk size
         -> V.Vector (u d) -- ^ random projection vectors
-        -> C.ConduitT (v d) o m (RPT d (V.Vector (v d))) 
+        -> C.ConduitT
+           (Embed v d x)
+           o
+           m
+           (RPT d (V.Vector (Embed v d x))) 
 insertC maxDepth minLeaf n rvs = chunkedAccum n z (insert maxDepth minLeaf rvs)
   where
     z = Tip mempty
@@ -108,8 +113,8 @@ forest :: (Monad m, Inner SVector v) =>
        -> Int -- ^ data chunk size
        -> Double -- ^ nonzero density of projection vectors
        -> Int -- ^ dimension of projection vectors
-       -> C.ConduitT () (v Double) m () -- ^ data source
-       -> m (RPForest Double (V.Vector (v Double)))
+       -> C.ConduitT () (Embed v Double x) m () -- ^ data source
+       -> m (RPForest Double (V.Vector (Embed v Double x)))
 forest seed maxd minl ntrees chunksize pnz dim src = do
   let
     rvss = sample seed $ do
@@ -130,10 +135,10 @@ insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector 
              -> Int -- ^ chunk size
              -> IM.IntMap (v1 (u d)) -- one entry per tree
              -> C.ConduitT
-                (v d)
+                (Embed v d x)
                 o
                 m
-                (IM.IntMap (RPT d (V.Vector (v d))))
+                (IM.IntMap (RPT d (V.Vector (Embed v d x))))
 insertMultiC maxd minl n rvss = chunkedAccum n im0 (insertMulti maxd minl rvss)
   where
     im0 = IM.map (const z) rvss
@@ -145,9 +150,9 @@ insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) 
                Int
             -> Int
             -> IM.IntMap (v1 (u d)) -- ^ projection vectors
-            -> IM.IntMap (RPT d (V.Vector (v d))) -- ^ accumulator of subtrees
-            -> V.Vector (v d) -- ^ data chunk
-            -> IM.IntMap (RPT d (V.Vector (v d)))
+            -> IM.IntMap (RPT d (V.Vector (Embed v d x))) -- ^ accumulator of subtrees
+            -> V.Vector (Embed v d x) -- ^ data chunk
+            -> IM.IntMap (RPT d (V.Vector (Embed v d x)))
 insertMulti maxd minl rvss tacc xs =
   flip IM.mapWithKey tacc $ \ !i !t -> case IM.lookup i rvss of
                                       Just !rvs -> insert maxd minl rvs t xs
@@ -158,9 +163,9 @@ insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size
        -> v1 (u d) -- ^ projection vectors
-       -> RPT d (V.Vector (v d)) -- ^ accumulator
-       -> V.Vector (v d) -- ^ data chunk
-       -> RPT d (V.Vector (v d))
+       -> RPT d (V.Vector (Embed v d x)) -- ^ accumulator
+       -> V.Vector (Embed v d x) -- ^ data chunk
+       -> RPT d (V.Vector (Embed v d x))
 insert maxDepth minLeaf rvs = loop 0
   where
     z = Tip mempty

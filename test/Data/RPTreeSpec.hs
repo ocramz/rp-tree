@@ -3,10 +3,14 @@ module Data.RPTreeSpec where
 
 import Control.Monad (replicateM)
 
+-- conduit
+import Data.Conduit ((.|))
+import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, foldl)
+-- hspec
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, sparse, dense,  RPTree, candidates, levels, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource)
+import Data.RPTree (forest, knn, sparse, dense,  RPTree, candidates, levels, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..))
 
 spec :: Spec
 spec =
@@ -22,7 +26,7 @@ spec =
         k = 5
         dim = 2 -- vector dimension
         q = fromListDv [0.1, (- 0.7)] -- query
-        dats = dataSource n (genGaussMix dim) -- data
+        dats = dataSource n (genGaussMix dim)  .| C.map (\ x -> Embed x ()) -- data
       tts <- sampleT 1234 $ forest 1234 maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
       let
         hits = knn metricL2 k tts q

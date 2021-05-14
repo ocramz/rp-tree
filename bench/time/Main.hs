@@ -31,7 +31,7 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Unboxed as VU (Unbox, Vector, map)
 
-import Data.RPTree (tree, forest, recallWith, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), normalSparse2, liftC)
+import Data.RPTree (tree, forest, recallWith, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), normalSparse2, liftC, Embed(..))
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datD, datS)
 
 main :: IO ()
@@ -49,7 +49,7 @@ benchConfigs descr pdim = [ BenchConfig descr maxd minl nt chunk nzd pdim n nq
                             chunk <- [100],
                             nzd <- [0.2],
                             n <- [1000],
-                            nq <- [10, 100]
+                            nq <- [10]
                           ]
 
 -- -- Binary mixture
@@ -68,7 +68,7 @@ binMixFQBench = do
 
 -- | Measure recall @ 10 and mean time
 binMixFQBench1 :: BenchConfig -> IO (Double, Double)
-binMixFQBench1 cfg = forestBenchGen seed (datS n d nzData) act 2 cfg
+binMixFQBench1 cfg = forestBenchGen seed src act 2 cfg
   where
     n = bcDataSize cfg
     d = bcVectorDim cfg
@@ -77,6 +77,7 @@ binMixFQBench1 cfg = forestBenchGen seed (datS n d nzData) act 2 cfg
     nzData = 0.8 -- nz density of data 
     k = 10 -- number of ANN's to return
     seed = 1234
+    src = datS n d nzData .| C.map (\r -> Embed r ())
     qs = samples nq seed $ normalSparse2 nzData d
     act tt = do
       -- pure $! recallWith metricL2 tt k `map` qs
@@ -89,37 +90,38 @@ binMixFQBench1 cfg = forestBenchGen seed (datS n d nzData) act 2 cfg
 
 -- -- MNIST dataset
 
-mnistBench :: IO ()
-mnistBench = do
-  let
-    cfgs = benchConfigs "MNIST dataset" 784
-    mnfpath = "assets/mnist/train-images-idx3-ubyte"
-  forM_ cfgs $ \cfg -> do
-    stats <- mnistFQBench1 mnfpath cfg
-    print cfg
-    print stats
+-- mnistBench :: IO ()
+-- mnistBench = do
+--   let
+--     cfgs = benchConfigs "MNIST dataset" 784
+--     mnfpath = "assets/mnist/train-images-idx3-ubyte"
+--   forM_ cfgs $ \cfg -> do
+--     stats <- mnistFQBench1 mnfpath cfg
+--     print cfg
+--     print stats
 
--- | Measure recall @ 10 and mean time
-mnistFQBench1 :: FilePath -> BenchConfig -> IO (Double, Double)
-mnistFQBench1 fp cfg = forestBench (mnist fp n) act 1 cfg
-  where
-    n = bcDataSize cfg
-    k = 10 -- number of ANN's to return
-    d = bcVectorDim cfg
-    nzData = 0.8 -- nz density of data 
-    act x = do
-      tt <- runResourceT x
-      let q = sample 1234 $ normalSparse2 nzData d
-      pure $! recallWith metricL2 tt k q
+-- -- | Measure recall @ 10 and mean time
+-- -- mnistFQBench1 :: FilePath -> BenchConfig -> IO (Double, Double)
+-- mnistFQBench1 fp cfg = forestBench (mnist fp n) act 1 cfg
+--   where
+--     n = bcDataSize cfg
+--     k = 10 -- number of ANN's to return
+--     d = bcVectorDim cfg
+--     nzData = 0.8 -- nz density of data 
+--     act x = do
+--       tt <- runResourceT x
+--       let q = sample 1234 $ normalSparse2 nzData d
+--       pure $! recallWith metricL2 tt k q
 
 mnist :: MonadResource m =>
          FilePath -- path to uncompressed MNIST IDX data file
       -> Int -- number of data items
-      -> C.ConduitT a (SVector Double) m ()
+      -> C.ConduitT a (Embed SVector Double ()) m ()
 mnist fp n = C.takeExactly n src
   where
     src = sourceIdxSparse fp .|
-          C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r))
+          C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r)) .|
+          C.map (\r -> Embed r ())
     f (i, x) = (i, toUnitRange x)
 
 toUnitRange :: Word8 -> Double
@@ -130,13 +132,13 @@ toUnitRange w8 = fromIntegral w8 / 255
 
 -- -- UTILS
 
--- | runs a benchmark on a newly created RPForest initialized with a random seed
-forestBench :: (MonadThrow m, Inner SVector v) =>
-               C.ConduitT () (v Double) m ()
-            -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
-            -> Int  -- ^ number of replicates
-            -> BenchConfig
-            -> IO (c, Double) -- ^ result, mean wall-clock time measurement
+-- -- | runs a benchmark on a newly created RPForest initialized with a random seed
+-- forestBench :: (MonadThrow m, Inner SVector v) =>
+--                C.ConduitT () (v Double) m ()
+--             -> (m (RPForest Double (V.Vector (v Double))) -> IO c) -- ^ allows for both deterministic and random data sources
+--             -> Int  -- ^ number of replicates
+--             -> BenchConfig
+--             -> IO (c, Double) -- ^ result, mean wall-clock time measurement
 forestBench src go n cfg = benchmark n setup (const $ pure ()) go
   where
     setup = do
@@ -145,26 +147,10 @@ forestBench src go n cfg = benchmark n setup (const $ pure ()) go
       pure $ growForest s cfg src
 
 
--- -- forestBenchRes :: (MonadResource m, Inner SVector v) =>
--- --                   C.ConduitT
--- --                   ()
--- --                   (v Double)
--- --                   m
--- --                   ()
--- --                -> (RPForest Double (V.Vector (v Double)) -> IO c)
--- --                -> Int
--- --                -> BenchConfig
--- --                -> IO (c, Double)
-forestBenchRes src go n cfg = benchmarkM n setup go
-  where
-    setup = do
-      s <- randSeed
-      runResourceT $ growForest s cfg src
-
-forestBenchGen :: (MonadIO m, Inner SVector v, NFData (v Double)) =>
+forestBenchGen :: (MonadIO m, Inner SVector v, NFData x, NFData (v Double)) =>
                   Word64
-               -> C.ConduitT () (v Double) (GenT m) ()
-               -> (RPForest Double (V.Vector (v Double)) -> m a2)
+               -> C.ConduitT () (Embed v Double x) (GenT m) ()
+               -> (RPForest Double (V.Vector (Embed v Double x)) -> m a2)
                -> Int
                -> BenchConfig
                -> m (a2, Double)
@@ -177,12 +163,12 @@ forestBenchGen seed src go n cfg = benchmarkM n setup go
 
 
 
-treeBench :: (Monad m, Inner SVector v) =>
-             C.ConduitT () (v Double) m ()
-          -> (m (RPTree Double (V.Vector (v Double))) -> IO c)
-          -> Int
-          -> BenchConfig
-          -> IO (c, Double)
+-- treeBench :: (Monad m, Inner SVector v) =>
+--              C.ConduitT () (v Double) m ()
+--           -> (m (RPTree Double (V.Vector (v Double))) -> IO c)
+--           -> Int
+--           -> BenchConfig
+--           -> IO (c, Double)
 treeBench src go n cfg = benchmark n setup (const $ pure ()) go
       where
         setup = do
@@ -190,19 +176,19 @@ treeBench src go n cfg = benchmark n setup (const $ pure ()) go
           -- let src' = C.transPipe lift src
           pure $ growTree s cfg src
 
-growTree :: (Monad m, Inner SVector v) =>
-            Word64
-         -> BenchConfig
-         -> C.ConduitT () (v Double) m ()
-         -> m (RPTree Double (V.Vector (v Double)))
+-- growTree :: (Monad m, Inner SVector v) =>
+--             Word64
+--          -> BenchConfig
+--          -> C.ConduitT () (v Double) m ()
+--          -> m (RPTree Double (V.Vector (v Double)))
 growTree seed (BenchConfig _ maxd minl _ chunksize pnz pdim _ _) =
   tree seed maxd minl chunksize pnz pdim
 
-growForest :: (Monad m, Inner SVector v) =>
-              Word64
-           -> BenchConfig
-           -> C.ConduitT () (v Double) m ()
-           -> m (RPForest Double (V.Vector (v Double)))
+-- growForest :: (Monad m, Inner SVector v) =>
+--               Word64
+--            -> BenchConfig
+--            -> C.ConduitT () (v Double) m ()
+--            -> m (RPForest Double (V.Vector (v Double)))
 growForest seed (BenchConfig _ maxd minl ntrees chunksize pnz pdim _ _) =
   forest seed maxd minl ntrees chunksize pnz pdim
 
