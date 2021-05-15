@@ -44,16 +44,18 @@ import Codec.Serialise (Serialise(..), serialise, deserialiseOrFail)
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
-import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith, last, head)
+import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), (!?), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith, last, head, imap)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList, toList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
--- | Pair a datum with a vector embedding
+-- | Pairing of a data item with its vector embedding
+--
+-- The vector is used internally for indexing
 data Embed v e a = Embed {
-  eEmbed :: !(v e) -- ^ the embedding is a vector
-  , eData :: !a
+  eEmbed :: !(v e) -- ^ vector embedding
+  , eData :: !a -- ^ data item
                        } deriving (Eq, Ord, Show, Generic, Functor)
 instance (NFData (v e), NFData a) => NFData (Embed v e a)
 instance (Serialise (v e), Serialise a) => Serialise (Embed v e a)
@@ -180,6 +182,7 @@ deserialiseRPForest bss = case deserialiseOrFail `traverse` bss of
 rpTreeData :: Traversal' (RPTree d a) a
 rpTreeData = rpTree . rpData
 
+-- | All data buckets stored at the leaves of the tree
 leaves :: RPTree d a -> [a]
 leaves = (^.. rpTreeData)
 
@@ -210,8 +213,8 @@ instance Scale DVector where
 class (Scale u, Scale v) => Inner u v where
   inner :: (VU.Unbox a, Num a) => u a -> v a -> a
   metricL2 :: (VU.Unbox a, Floating a) => u a -> v a -> a
-  (^+^) :: (VU.Unbox a, Num a) => u a -> v a -> u a
-  (^-^) :: (VU.Unbox a, Num a) => u a -> v a -> u a
+  (^+^) :: (VU.Unbox a, Num a) => u a -> v a -> v a
+  (^-^) :: (VU.Unbox a, Num a) => u a -> v a -> v a
 
 instance Inner SVector SVector where
   inner (SV _ v1) (SV _ v2) = innerSS v1 v2
@@ -221,13 +224,13 @@ instance Inner SVector SVector where
 instance Inner SVector VU.Vector where
   inner (SV _ v1) v2 = innerSD v1 v2
   metricL2 (SV _ v1) v2 = metricSDL2 v1 v2
-  (SV n v1) ^+^ v2 = SV n $ sumSD v1 v2
-  (SV n v1) ^-^ v2 = SV n $ diffSD v1 v2
+  (SV _ v1) ^+^ v2 = sumSD v1 v2
+  (SV _ v1) ^-^ v2 = diffSD v1 v2
 instance Inner SVector DVector where
   inner (SV _ v1) (DV v2) = innerSD v1 v2
   metricL2 (SV _ v1) (DV v2) = metricSDL2 v1 v2
-  (SV n v1) ^+^ (DV v2) = SV n $ sumSD v1 v2
-  (SV n v1) ^-^ (DV v2) = SV n $ diffSD v1 v2
+  (SV _ v1) ^+^ (DV v2) = DV $ sumSD v1 v2
+  (SV _ v1) ^-^ (DV v2) = DV $ diffSD v1 v2
 instance Inner DVector DVector where
   inner (DV v1) (DV v2) = innerDD v1 v2
   metricL2 (DV v1) (DV v2) = metricDDL2 v1 v2
@@ -287,10 +290,9 @@ metricSSL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
     duv = u `diffSS` v
 
 -- | Vector distance induced by the L2 norm (sparse-dense)
-metricSDL2 :: (Floating a, VG.Vector v1 a, VU.Unbox a,
-                VG.Vector v1 (Int, a), VG.Vector v2 a) =>
-              v1 (Int, a) -> v2 a -> a
-metricSDL2 u v = sqrt $ VG.sum $ VG.map (\(_, x) -> x ** 2) duv
+metricSDL2 :: (Floating a, VU.Unbox a, VG.Vector u (Int, a), VG.Vector v a) =>
+              u (Int, a) -> v a -> a
+metricSDL2 u v = sqrt $ VG.sum $ VG.map (** 2) duv
   where
     duv = u `diffSD` v
 
@@ -308,8 +310,8 @@ scaleS a vv = VG.map (\(i, x) -> (i, a * x)) vv
 
 -- | Vector sum
 sumSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
-         u (Int, a) -> v a -> u (Int, a)
-sumSD = binSD (-)
+         u (Int, a) -> v a -> v a
+sumSD = binSDD (+) 0
 
 -- | Vector sum
 sumSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
@@ -318,8 +320,8 @@ sumSS = binSS (+) 0
 
 -- | Vector difference
 diffSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a, Num a) =>
-          u (Int, a) -> v a -> u (Int, a)
-diffSD = binSD (-)
+          u (Int, a) -> v a -> v a
+diffSD = binSDD (-) 0
 
 -- | Vector difference
 diffSS :: (VG.Vector u (Int, a), VG.Vector v (Int, a), VU.Unbox a, Num a) =>
@@ -344,21 +346,35 @@ binSS f z vv1 vv2 = VG.unfoldr go (0, 0)
             LT -> Just ((il, f xl z ), (succ i1, i2     ))
             GT -> Just ((ir, f z  xr), (i1     , succ i2))
 
-
--- FIXME the return type of a sparse-dense binary operation depends on the operator itself (S * D = S , S + D = D ), so 'binSD' must be changed
-binSD :: (VG.Vector u (Int, a), VG.Vector v a, VU.Unbox a) =>
-         (a -> a -> a) -> u (Int, a) -> v a -> u (Int, a)
-binSD f vv1 vv2 = VG.unfoldr go 0
+-- | sparse * dense -> dense
+--
+-- e.g. vector sum, difference
+binSDD :: (VG.Vector v1 a, VG.Vector v2 p, VG.Vector v3 (Int, p)) =>
+          (p -> p -> a) -> p -> v3 (Int, p) -> v2 p -> v1 a
+binSDD f z vv1 vv2 = VG.unfoldr go (0, 0)
   where
     nz1 = VG.length vv1
     nz2 = VG.length vv2
-    go i
-      | i >= nz1 || i >= nz2 = Nothing
-      | otherwise = Just ((il, y), succ i)
-          where
-            (il, xl) = vv1 VG.! i
-            xr       = vv2 VG.! il
-            y = f xl xr
+    go (i1, i2)
+      | i1 >= nz1 || i2 >= nz2 = Nothing
+      | otherwise =
+          let
+            (il, xl) = vv1 VG.! i1
+            xr       = vv2 VG.! i2
+          in case il `compare` i2 of
+            EQ -> Just (f xl xr, (succ i1, succ i2))
+            LT -> Just (f xl z , (succ i1, i2     ))
+            GT -> Just (f z  xr, (i1     , succ i2))
+
+{-
+-  b0
+-  b1
+a2 b2
+-  b3
+a4 b4
+-}
+
+
 
 
 {-# SCC partitionAtMedian #-}
@@ -420,3 +436,23 @@ sortByVG f v = runST $ do
 -- makeLensesFor [("_idD", "idD")] ''Id
 -- instance (Eq a) => Ord (Id a) where
 --   Id _ u1 <= Id _ u2 = u1 <= u2
+
+
+
+
+
+
+-- -- FIXME the return type of a sparse-dense binary operation depends on the operator itself (S * D = S , S + D = D ), so 'binSD' must be changed
+-- binSD :: (VG.Vector u (Int, a), VG.Vector v a) =>
+--          (a -> a -> a) -> u (Int, a) -> v a -> u (Int, a)
+-- binSD f vv1 vv2 = VG.unfoldr go 0
+--   where
+--     nz1 = VG.length vv1
+--     nz2 = VG.length vv2
+--     go i
+--       | i >= nz1 || i >= nz2 = Nothing
+--       | otherwise = Just ((il, y), succ i)
+--           where
+--             (il, xl) = vv1 VG.! i
+--             xr       = vv2 VG.! il
+--             y = f xl xr

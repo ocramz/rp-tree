@@ -27,8 +27,8 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, candidates, Embed(..), Inner(..), RPTree, RPForest, leaves, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2)
-import Data.RPTree.Internal.Testing (datS, datD)
+import Data.RPTree (knn, candidates, Embed(..), Inner(..), RPTree, RPForest, leaves, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, forest, dataSource, sparse, normal2, normalSparse2, datS, datD)
+-- import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
 main = do -- putStrLn "hello!"

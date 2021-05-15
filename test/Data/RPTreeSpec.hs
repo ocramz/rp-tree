@@ -2,6 +2,7 @@
 module Data.RPTreeSpec where
 
 import Control.Monad (replicateM)
+import Data.Foldable (toList)
 
 -- conduit
 import Data.Conduit ((.|))
@@ -13,7 +14,33 @@ import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal,
 import Data.RPTree (forest, knn, sparse, dense,  RPTree, candidates, levels, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..))
 
 spec :: Spec
-spec =
+spec = do
+  describe "Data.RPTree.Internal : vector space operations" $ do
+    let
+      vs0, vs1 :: SVector Double
+      vs0 = fromListSv 5 [(1, 3.4), (4, 2.1)]
+      vs1 = fromListSv 5 [(0, 6.7), (3, 5.5)]
+      v1 :: DVector Double
+      v1 = fromListDv [1,2,3,4,5]
+    it "(^+^) : sparse * dense" $ do
+      let
+        vsum = vs0 ^+^ v1 :: DVector Double
+        vexpect = fromListDv [1, 5.4, 3, 4, 7.1]
+      vsum `shouldBe` vexpect
+    it "(^-^) : sparse * dense" $ do
+      let
+        vdiff = vs0 ^-^ v1 :: DVector Double
+        vexpect = fromListDv [(- 1), 1.4, (- 3), (- 4), (- 2.9)]
+      vdiff `shouldBe` vexpect
+    it "inner : sparse * sparse" $ do
+      let
+        x = vs0 `inner` vs1
+      x `shouldBe` 0
+    it "inner : sparse * dense" $ do
+      let
+        x = vs0 `inner` v1
+      x `shouldBe` 17.3
+
   describe "Data.RPTree" $ do
 
     it "knn : results should be close to the query" $ do
@@ -25,15 +52,14 @@ spec =
         nchunk = 50
         k = 5
         dim = 2 -- vector dimension
-        q = fromListDv [0.1, (- 0.7)] -- query
-        dats = dataSource n (genGaussMix dim)  .| C.map (\ x -> Embed x ()) -- data
+        q = fromListDv [0, 0] -- query
+        dats = dataSource n genCircle2  .|
+               C.map (\ x -> Embed x ()) -- data
       tts <- sampleT 1234 $ forest 1234 maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
       let
         hits = knn metricL2 k tts q
-      -- let
-      --   hits = foldMap (`candidates` q) tts -- candidates tts q
-      -- print hits -- DEBUG
-      hits `shouldSatisfy` (not . null)
+        dists = map fst $ toList hits
+      maximum dists `shouldSatisfy` (< 1)
 
 -- test data
 
@@ -46,13 +72,33 @@ normalDv mu sig dim = dense dim (normal mu sig)
 -- gaussMix :: Int -> Int -> [SVector Double]
 -- gaussMix m dim = evalGen 1234 $ replicateM m (genGaussMix dim)
 
--- genGaussMix :: Int -> Gen (DVector Double) --
 genGaussMix :: (Monad m) => Int -> GenT m (DVector Double)
 genGaussMix dim = do
   b <- bernoulli 0.5
   if b
     then normalDv 0 1 dim
     else normalDv 3 2 dim
+
+-- binary mixture of two non-overlapping circles
+genCircle2 :: (Monad m) => GenT m (DVector Double)
+genCircle2 = do
+  let
+    d = fromListDv [2, 3]
+    r = 1
+  b <- bernoulli 0.5
+  if b
+    then genCircle r
+    else (^+^ d) <$> genCircle r
+
+genCircle :: (Monad m) => Double -> GenT m (DVector Double)
+genCircle r = go
+  where
+    go = do
+      x <- uniformR (- r) r
+      y <- uniformR (- r) r
+      if x**2 + y**2 <= r
+        then pure $ fromListDv [x, y]
+        else go
 
 -- normalP :: Double -> Double -> Int -> Gen (P Double)
 -- normalP mu sig d = P <$> VG.replicateM d (normal mu sig)

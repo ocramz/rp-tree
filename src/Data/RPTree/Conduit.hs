@@ -55,8 +55,6 @@ liftC = C.transPipe lift
 -- * stationary : each chunk is representative of the whole dataset
 --
 -- * bounded : we wait until the end of the stream to produce a result
---
--- Throws 'EmptyResult' if the conduit is empty
 tree :: (Monad m, Inner SVector v) =>
         Word64 -- ^ random seed
      -> Int -- ^ max tree depth
@@ -103,8 +101,6 @@ insertC maxDepth minLeaf n rvs = chunkedAccum n z (insert maxDepth minLeaf rvs)
 -- * stationary : each chunk is representative of the whole dataset
 --
 -- * bounded : we wait until the end of the stream to produce a result
---
--- Throws 'EmptyResult' if the conduit is empty
 forest :: (Monad m, Inner SVector v) =>
           Word64 -- ^ random seed
        -> Int -- ^ max tree depth

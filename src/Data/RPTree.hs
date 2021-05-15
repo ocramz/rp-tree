@@ -11,11 +11,46 @@
 {-# options_ghc -Wno-unused-top-binds #-}
 
 {-|
-Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces
+Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces.
+
+== Introduction
+
+Similarity search is a common problem in many fields (imaging, natural language processing, ..), and is often one building block of a larger data processing system.
+
+There are many ways to /embed/ data in a vector space such that similarity search can be recast as a geometrical nearest neighbor lookup.
+
+In turn, the efficiency and effectiveness of querying such a vector database strongly depends on how internally the data index is represented, graphs and trees being two common approaches.
+
+The naive, all-pairs exact search becomes impractical even at moderate data sizes, which motivated research into approximate indexing methods.
+
+
+== Overview
+
+This library provides a /tree/-based approach to approximate nearest neighbor search. The database is recursively partitioned according to a series of random projections, and this partitioning is logically arranged as a tree which allows for rapid lookup.
+
+Internally, a single random projection vector is sampled per tree level, as proposed in [1]. The projection vectors in turn can be sparse with a tunable sparsity parameter, which can help compressing the database at a small accuracy cost.
+
+Retrieval accuracy can be improved by populating multiple trees (i.e. a /random forest/), and intersecting the results of the same query against each of them.
+
+== Quick Start
+
+1) Build an index with 'forest'
+
+2) Lookup the \(k\) nearest neighbors to a query point with 'knn'
+
+3) The database can be serialised and restored with 'serialiseRPForest' and 'deserialiseRPForest', respectively.
+
+
+
+== References
+
+1) Hyvonen, V., et al., Fast Nearest Neighbor Search through Sparse Random Projections and Voting,  https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf
+
 -}
 module Data.RPTree (
   -- * Construction
-  tree, forest
+  -- tree,
+  forest
   -- * Query
   , knn
   -- * I/O
@@ -41,12 +76,7 @@ module Data.RPTree (
   , metricSSL2, metricSDL2
   -- *** Scale
   , scaleS, scaleD
-  -- * Conduit
-  , dataSource
-  -- * Random generation
-  -- ** vector
-  , sparse, dense
-  , normal2
+
 
   -- * Rendering
   , draw
@@ -55,6 +85,13 @@ module Data.RPTree (
   -- * Testing
   , randSeed, BenchConfig(..), normalSparse2
   , liftC
+  -- ** Random generation
+  -- *** Conduit
+  , dataSource
+  , datS, datD
+  -- *** Vector data
+  , sparse, dense
+  , normal2
   ) where
 
 import Control.Monad (replicateM)
@@ -92,17 +129,17 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), levels, points, leaves, RT(..), Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
-import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed)
+import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datS, datD)
 import Data.RPTree.Draw (draw, writeCsv)
 
 
--- | k nearest neighbors
+-- | Look up the \(k\) nearest neighbors to a query point
 knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
        (u d -> v d -> p) -- ^ distance function
     -> Int -- ^ k neighbors
     -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
     -> v d -- ^ query point
-    -> V.Vector (p, Embed u d x) -- ^ ordered in increasing distance order
+    -> V.Vector (p, Embed u d x) -- ^ ordered in increasing distance order to the query point
 knn distf k tts q = sortByVG fst cs
   where
     cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ VG.take k $ fold $ (`candidates` q) <$> tts
