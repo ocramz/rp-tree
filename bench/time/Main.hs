@@ -19,8 +19,8 @@ import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, 
 import Control.DeepSeq (NFData(..), force)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
--- mnist-idx-conduit
-import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
+-- -- mnist-idx-conduit
+-- import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 -- splitmix-distributions
 import System.Random.SplitMix.Distributions (GenT, sampleT, sample, samples)
 
@@ -31,8 +31,7 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Unboxed as VU (Unbox, Vector, map)
 
-import Data.RPTree (tree, forest, recallWith, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), normalSparse2, liftC, Embed(..))
-import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datD, datS)
+import Data.RPTree (forest, recallWith, knn, fromVectorSv, fromListSv, RPForest, RPTree, SVector, Inner(..), normalSparse2, liftC, Embed(..), BenchConfig(..), randSeed, datD, datS)
 
 main :: IO ()
 main = do -- putStrLn "hello!"
@@ -113,16 +112,16 @@ binMixFQBench1 cfg = forestBenchGen seed src act 2 cfg
 --       let q = sample 1234 $ normalSparse2 nzData d
 --       pure $! recallWith metricL2 tt k q
 
-mnist :: MonadResource m =>
-         FilePath -- path to uncompressed MNIST IDX data file
-      -> Int -- number of data items
-      -> C.ConduitT a (Embed SVector Double ()) m ()
-mnist fp n = C.takeExactly n src
-  where
-    src = sourceIdxSparse fp .|
-          C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r)) .|
-          C.map (\r -> Embed r ())
-    f (i, x) = (i, toUnitRange x)
+-- mnist :: MonadResource m =>
+--          FilePath -- path to uncompressed MNIST IDX data file
+--       -> Int -- number of data items
+--       -> C.ConduitT a (Embed SVector Double ()) m ()
+-- mnist fp n = C.takeExactly n src
+--   where
+--     src = sourceIdxSparse fp .|
+--           C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r)) .|
+--           C.map (\r -> Embed r ())
+--     f (i, x) = (i, toUnitRange x)
 
 toUnitRange :: Word8 -> Double
 toUnitRange w8 = fromIntegral w8 / 255
@@ -161,28 +160,6 @@ forestBenchGen seed src go n cfg = benchmarkM n setup go
       x <- sampleT seed $ growForest s cfg src
       pure $ force x
 
-
-
--- treeBench :: (Monad m, Inner SVector v) =>
---              C.ConduitT () (v Double) m ()
---           -> (m (RPTree Double (V.Vector (v Double))) -> IO c)
---           -> Int
---           -> BenchConfig
---           -> IO (c, Double)
-treeBench src go n cfg = benchmark n setup (const $ pure ()) go
-      where
-        setup = do
-          s <- randSeed
-          -- let src' = C.transPipe lift src
-          pure $ growTree s cfg src
-
--- growTree :: (Monad m, Inner SVector v) =>
---             Word64
---          -> BenchConfig
---          -> C.ConduitT () (v Double) m ()
---          -> m (RPTree Double (V.Vector (v Double)))
-growTree seed (BenchConfig _ maxd minl _ chunksize pnz pdim _ _) =
-  tree seed maxd minl chunksize pnz pdim
 
 -- growForest :: (Monad m, Inner SVector v) =>
 --               Word64

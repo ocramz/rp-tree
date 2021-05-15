@@ -16,8 +16,8 @@ import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
 -- exceptions
 import Control.Monad.Catch (MonadThrow(..))
--- mnist-idx-conduit
-import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
+-- -- mnist-idx-conduit
+-- import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 -- splitmix-distributions
 import System.Random.SplitMix.Distributions (Gen, GenT, sample, sampleT, bernoulli, normal)
 -- transformers
