@@ -1,6 +1,6 @@
 # rp-tree
 
-[![Hackage](https://img.shields.io/hackage/v/rp-tree)](https://hackage.haskell.org/package/rp-tree) ![GitHub last commit](https://img.shields.io/github/last-commit/ocramz/rp-tree)
+[![Hackage](https://img.shields.io/hackage/v/rp-tree)](https://hackage.haskell.org/package/rp-tree) [![GitHub last commit](https://img.shields.io/github/last-commit/ocramz/rp-tree)](https://github.com/ocramz/rp-tree)
 
 ![rp-tree](r/scatter.png)
 
