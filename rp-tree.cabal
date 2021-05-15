@@ -1,9 +1,9 @@
 name:                rp-tree
-version:             0.3.3
+version:             0.3.4
 synopsis:            Random projection trees
 description:         Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces
                      .
-                     The entry point to the library and all documentation is in the "Data.RPTree" module.
+                     To use the library, import "Data.RPTree", which also contains all documentation.
 homepage:            https://github.com/ocramz/rp-tree
 license:             BSD3
 license-file:        LICENSE
@@ -35,9 +35,9 @@ library
                      , conduit >= 1.3.4.1
                      , containers >= 0.6.2.1
                      , deepseq >= 1.4.4.0
-                     , exceptions
-                     , microlens
-                     , microlens-th
+                     -- , exceptions
+                     -- , microlens
+                     -- , microlens-th
                      , mtl
                      -- , psqueues
                      , serialise >= 0.2.3.0

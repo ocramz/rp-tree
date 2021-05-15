@@ -24,8 +24,8 @@ import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, f
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM, mapAccum)
 -- containers
 import qualified Data.IntMap.Strict as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey, intersectionWith)
--- exceptions
-import Control.Monad.Catch (MonadThrow(..))
+-- -- exceptions
+-- import Control.Monad.Catch (MonadThrow(..))
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- splitmix-distributions
