@@ -13,23 +13,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-haskell@v1
+    - uses: haskell/actions/setup@v1
       with:
-        ghc-version: '8.10.4'
-        cabal-version: '3.2'
-
-    - name: Cache
-      uses: actions/cache@v1
-      env:
-        cache-name: cache-cabal
-      with:
-        path: ~/.cabal
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
+        ghc-version: 'latest'
+        # cabal-version: 'latest'. Omitted, but defaults to 'latest'
+        enable-stack: true
+        stack-version: 'latest'
 
     - name: Run benchmarks
-      run: stack bench
+      run: stack bench --no-interleaved-output
 

@@ -17,8 +17,8 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print, takeExactly)
 -- deepseq
 import Control.DeepSeq (NFData(..), force)
--- exceptions
-import Control.Monad.Catch (MonadThrow(..))
+-- -- exceptions
+-- import Control.Monad.Catch (MonadThrow(..))
 -- -- mnist-idx-conduit
 -- import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 -- splitmix-distributions
