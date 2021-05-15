@@ -51,6 +51,7 @@ spec = do
         minLeaf = 20
         nchunk = 50
         k = 5
+        dim :: Int
         dim = 2 -- vector dimension
         q = fromListDv [0, 0] -- query
         dats = dataSource n genCircle2  .|

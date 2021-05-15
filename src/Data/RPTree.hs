@@ -59,7 +59,7 @@ module Data.RPTree (
   -- * Validation
   , recallWith
   -- * Access
-  , levels, points, leaves, candidates
+  , levels, points, candidates
   -- * Types
   , Embed(..)
   -- ** RPTree
@@ -128,7 +128,7 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
 import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), levels, points, leaves, RT(..), Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), levels, points, Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datS, datD)
 import Data.RPTree.Draw (draw, writeCsv)
 

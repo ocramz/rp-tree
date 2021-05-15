@@ -9,7 +9,7 @@
 {-# language LambdaCase #-}
 {-# language MultiParamTypeClasses #-}
 {-# language GeneralizedNewtypeDeriving #-}
-{-# language TemplateHaskell #-}
+-- {-# language TemplateHaskell #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
@@ -33,9 +33,9 @@ import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 import qualified Data.IntMap.Strict as IM (IntMap, fromList)
 -- deepseq
 import Control.DeepSeq (NFData(..))
--- microlens
-import Lens.Micro (Traversal', (.~), (^..), folded)
-import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
+-- -- microlens
+-- import Lens.Micro (Traversal', (.~), (^..), folded)
+-- import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
 -- serialise
@@ -91,8 +91,16 @@ instance (VU.Unbox a, Show a) => Show (SVector a) where
   show (SV n vv) = unwords ["SV", show n, show (VU.toList vv)]
 instance NFData (SVector a)
 
+-- | (Unsafe) Pack a 'SVector' from its vector dimension and components
+--
+-- Note : the relevant invariants are not checked :
+--
+-- * vector components are _assumed_ to be in increasing order
+--
+-- * vector dimension is larger than any component index
 fromListSv :: VU.Unbox a => Int -> [(Int, a)] -> SVector a
 fromListSv n ll = SV n $ VU.fromList ll
+
 -- | (Unsafe) Pack a 'SVector' from its vector dimension and components
 --
 -- Note : the relevant invariants are not checked :
@@ -119,16 +127,6 @@ fromVectorDv = DV
 toListDv :: (VU.Unbox a) => DVector a -> [a]
 toListDv (DV v) = VU.toList v
 
--- | Internal
---
--- one projection vector per node (like @annoy@)
-data RT v d a =
-  RBin !d !(v d) !(RT v d a) !(RT v d a)
-  | RTip { _rData :: !a } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
-makeLensesFor [("_rData", "rData")] ''RT
-instance (NFData (v d), NFData d, NFData a) => NFData (RT v d a)
-
-
 
 -- | Internal
 --
@@ -142,7 +140,7 @@ data RPT d a =
   | Tip { _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 instance (Serialise a, Serialise d) => Serialise (RPT d a)
-makeLensesFor [("_rpData", "rpData")] ''RPT
+-- makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData a) => NFData (RPT v a)
 
 -- | Random projection trees
@@ -157,7 +155,7 @@ data RPTree d a = RPTree {
   , _rpTree :: !(RPT d a)
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 instance (Serialise d, Serialise a, VU.Unbox d) => Serialise (RPTree d a)
-makeLensesFor [("_rpTree", "rpTree")] ''RPTree
+-- makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData d) => NFData (RPTree d a)
 
 -- | A random projection forest is an ordered set of 'RPTree's
@@ -179,12 +177,12 @@ deserialiseRPForest bss = case deserialiseOrFail `traverse` bss of
   Left e -> Left (show e)
   Right xs -> Right $ IM.fromList $ zip [0 ..] xs
 
-rpTreeData :: Traversal' (RPTree d a) a
-rpTreeData = rpTree . rpData
+-- rpTreeData :: Traversal' (RPTree d a) a
+-- rpTreeData = rpTree . rpData
 
--- | All data buckets stored at the leaves of the tree
-leaves :: RPTree d a -> [a]
-leaves = (^.. rpTreeData)
+-- -- | All data buckets stored at the leaves of the tree
+-- leaves :: RPTree d a -> [a]
+-- leaves = (^.. rpTreeData)
 
 -- | Number of tree levels
 levels :: RPTree d a -> Int
