@@ -51,6 +51,8 @@ module Data.RPTree (
   -- * Construction
   -- tree,
   forest
+  -- , defaultParams
+  -- , ForestParams
   -- * Query
   , knn
   -- * I/O
@@ -111,10 +113,6 @@ import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, ins
 import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
 import Control.DeepSeq (NFData(..))
--- mtl
-import Control.Monad.State (MonadState(..), modify)
--- -- psqueues
--- import qualified Data.IntPSQ as PQ (IntPSQ, insert, fromList, findMin, minView)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -126,7 +124,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Conduit (tree, forest, dataSource, liftC)
+import Data.RPTree.Conduit (tree, forest, ForestParams, defaultParams, dataSource, liftC)
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), levels, points, Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datS, datD)

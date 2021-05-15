@@ -33,15 +33,8 @@ import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 import qualified Data.IntMap.Strict as IM (IntMap, fromList)
 -- deepseq
 import Control.DeepSeq (NFData(..))
--- -- microlens
--- import Lens.Micro (Traversal', (.~), (^..), folded)
--- import Lens.Micro.TH (makeLensesFor, makeLensesWith, lensRules, generateSignatures)
--- mtl
-import Control.Monad.State (MonadState(..), modify)
 -- serialise
 import Codec.Serialise (Serialise(..), serialise, deserialiseOrFail)
--- transformers
-import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
 import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!), (!?), take, drop, unzip, freeze, thaw, foldl, foldr, toList, zipWith, last, head, imap)

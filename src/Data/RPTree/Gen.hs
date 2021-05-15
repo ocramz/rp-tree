@@ -9,13 +9,11 @@ import Control.Monad (replicateM, foldM)
 
 -- containers
 import qualified Data.IntMap as IM (IntMap, insert, toList)
--- mtl
-import Control.Monad.Trans.Class (MonadTrans(..))
-import Control.Monad.State (MonadState(..), modify)
 -- splitmix-distribitions
 import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli, exponential, normal, discrete, categorical)
 -- transformers
-import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
+import Control.Monad.Trans.Class (MonadTrans(..))
+import Control.Monad.Trans.State (StateT(..), get, put, runStateT, evalStateT, State, runState, evalState)
 -- vector
 
 

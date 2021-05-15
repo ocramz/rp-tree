@@ -17,8 +17,6 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print, takeExactly)
 -- deepseq
 import Control.DeepSeq (NFData(..), force)
--- -- exceptions
--- import Control.Monad.Catch (MonadThrow(..))
 -- -- mnist-idx-conduit
 -- import Data.IDX.Conduit (sourceIdxSparse, sBufSize, sNzComponents)
 -- splitmix-distributions
@@ -115,10 +113,10 @@ binMixFQBench1 cfg = forestBenchGen seed src act 2 cfg
 -- mnist :: MonadResource m =>
 --          FilePath -- path to uncompressed MNIST IDX data file
 --       -> Int -- number of data items
---       -> C.ConduitT a (Embed SVector Double ()) m ()
--- mnist fp n = C.takeExactly n src
+--       -> C.ConduitT () (Embed SVector Double ()) m ()
+-- mnist fp n = src
 --   where
---     src = sourceIdxSparse fp .|
+--     src = sourceIdxSparse fp (Just n) .|
 --           C.map (\r -> fromVectorSv (sBufSize r) (VU.map f $ sNzComponents r)) .|
 --           C.map (\r -> Embed r ())
 --     f (i, x) = (i, toUnitRange x)

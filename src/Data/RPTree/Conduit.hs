@@ -6,7 +6,10 @@
 module Data.RPTree.Conduit
   (
     tree,
-  forest
+  forest,
+  ForestParams,
+  fpMaxTreeDepth,
+  defaultParams
   -- ** helpers
   , dataSource
   , liftC
@@ -24,10 +27,6 @@ import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, f
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM, mapAccum)
 -- containers
 import qualified Data.IntMap.Strict as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey, intersectionWith)
--- -- exceptions
--- import Control.Monad.Catch (MonadThrow(..))
--- mtl
-import Control.Monad.State (MonadState(..), modify)
 -- splitmix-distributions
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
 -- transformers
@@ -103,12 +102,12 @@ insertC maxDepth minLeaf n rvs = chunkedAccum n z (insert maxDepth minLeaf rvs)
 -- * bounded : we wait until the end of the stream to produce a result
 forest :: (Monad m, Inner SVector v) =>
           Word64 -- ^ random seed
-       -> Int -- ^ max tree depth
-       -> Int -- ^ min leaf size
-       -> Int -- ^ number of trees
-       -> Int -- ^ data chunk size
-       -> Double -- ^ nonzero density of projection vectors
-       -> Int -- ^ dimension of projection vectors
+       -> Int -- ^ max tree depth, \(l > 1\) 
+       -> Int -- ^ min leaf size, \(m_{leaf} > 1\)
+       -> Int -- ^ number of trees, \(n_t > 1\)
+       -> Int -- ^ data chunk size, \(n_{chunk} > 3\)
+       -> Double -- ^ nonzero density of projection vectors, \(p_{nz} \in (0, 1)\)
+       -> Int -- ^ dimension of projection vectors, \(d > 1\)
        -> C.ConduitT () (Embed v Double x) m () -- ^ data source
        -> m (RPForest Double (V.Vector (Embed v Double x)))
 forest seed maxd minl ntrees chunksize pnz dim src = do
@@ -120,6 +119,18 @@ forest seed maxd minl ntrees chunksize pnz dim src = do
                        insertMultiC maxd minl chunksize rvss
   pure $ IM.intersectionWith RPTree rvss ts
 
+data ForestParams = CP {
+  fpMaxTreeDepth :: Int -- ^ max tree depth \(l > 1\) 
+  , fpMinLeafSize :: Int -- ^ min leaf size 
+  , fpNumTrees :: Int -- ^ number of trees \(n_t > 1\)
+  , fpDataChunkSize :: Int -- ^ data chunk size
+  , fpProjNzDensity :: Double -- ^ nonzero density of projection vectors \(p_{nz} \in (0, 1)\)
+  , fpProjDimension :: Int -- ^ dimension of projection vectors \(d > 1\)
+                          } deriving (Show)
+
+defaultParams :: Int  -- ^ dimension of projection vectors \(d > 1\)
+              -> ForestParams
+defaultParams d = CP 5 10 3 100 0.5 d
 
 
 
