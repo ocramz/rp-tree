@@ -134,6 +134,14 @@ import Data.RPTree.Draw (draw, writeCsv)
 
 
 -- | Look up the \(k\) nearest neighbors to a query point
+--
+-- The supplied distance function @d@ must satisfy the definition of a metric, i.e.
+--
+-- * identity of indiscernible elements : \( d(x, y) = 0 \leftrightarrow x \equiv y \)
+--
+-- * symmetry : \(  d(x, y) = d(y, x)  \)
+--
+-- * triangle inequality : \( d(x, y) + d(y, z) \geq d(x, z) \)
 knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
        (u d -> v d -> p) -- ^ distance function
     -> Int -- ^ k neighbors
