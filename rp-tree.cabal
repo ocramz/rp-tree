@@ -15,7 +15,7 @@ build-type:          Simple
 extra-source-files:  README.md
                      Changelog.md
 extra-doc-files:     r/scatter.png
-cabal-version:       >=1.18
+cabal-version:       1.18
 tested-with:         GHC == 8.10.4
 
 library
@@ -76,7 +76,6 @@ benchmark bench-time
                      , benchpress
                      , conduit
                      , deepseq >= 1.4.4.0
-                     , exceptions
                      -- , mnist-idx-conduit
                      , mtl
                      , rp-tree
@@ -93,7 +92,6 @@ executable rp-tree
   build-depends:       base
                      , conduit
                      , containers
-                     , exceptions
                      -- , mnist-idx-conduit
                      , rp-tree
                      , splitmix
