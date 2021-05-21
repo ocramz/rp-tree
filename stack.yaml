@@ -18,7 +18,8 @@
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
 resolver:
-  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/17/10.yaml
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/14/27.yaml
+  # url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/17/10.yaml
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -41,7 +42,7 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 extra-deps:
-- splitmix-distributions-0.8.0.0@sha256:252f0c3eb5f58cb27edafe7dc4107de2640b72795e96317420ed862609159abd,1571
+- splitmix-distributions-0.9.0.0@sha256:3e290503505277f37e8981ecd577f56406bef656186700d549c7dfc324e2095c,1574
 - mnist-idx-conduit-0.4.0.0@sha256:efab42aff84c2c292f9ed733978d4908c89697a2b6880c78f01a2cd25aa06eb4,2211
 
 # Override default flag values for local packages and extra-deps
