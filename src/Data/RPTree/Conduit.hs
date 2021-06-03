@@ -3,13 +3,14 @@
 {-# language BangPatterns #-}
 {-# options_ghc -Wno-unused-imports #-}
 {-# options_ghc -Wno-unused-top-binds #-}
+{-# options_ghc -Wno-type-defaults #-}
 module Data.RPTree.Conduit
   (
     tree,
   forest,
-  ForestParams,
+  RPTreeConfig(..),
   fpMaxTreeDepth,
-  defaultParams
+  rpTreeCfg
   -- ** helpers
   , dataSource
   , liftC
@@ -119,18 +120,30 @@ forest seed maxd minl ntrees chunksize pnz dim src = do
                        insertMultiC maxd minl chunksize rvss
   pure $ IM.intersectionWith RPTree rvss ts
 
-data ForestParams = CP {
+data RPTreeConfig = RPCfg {
   fpMaxTreeDepth :: Int -- ^ max tree depth \(l > 1\) 
   , fpMinLeafSize :: Int -- ^ min leaf size 
   , fpNumTrees :: Int -- ^ number of trees \(n_t > 1\)
   , fpDataChunkSize :: Int -- ^ data chunk size
   , fpProjNzDensity :: Double -- ^ nonzero density of projection vectors \(p_{nz} \in (0, 1)\)
-  , fpProjDimension :: Int -- ^ dimension of projection vectors \(d > 1\)
                           } deriving (Show)
 
-defaultParams :: Int  -- ^ dimension of projection vectors \(d > 1\)
-              -> ForestParams
-defaultParams d = CP 5 10 3 100 0.5 d
+defaultParams :: RPTreeConfig
+defaultParams = RPCfg 5 10 3 100 0.5
+
+-- | Configure the rp-tree forest construction process with some natural defaults
+rpTreeCfg :: Integral a =>
+             a -- ^ data size
+          -> Int -- ^ vector dimension
+          -> RPTreeConfig
+rpTreeCfg n d = RPCfg maxd minl ntree nchunk pnz
+  where
+    minl = 20
+    maxd = ceiling $ logBase 2 (fromIntegral n / fromIntegral minl)
+    ntree = 3
+    nchunk = ceiling $ fromIntegral n / 100
+    pnzMin = 1 / logBase 10 (fromIntegral d)
+    pnz = pnzMin `max` 1.0
 
 
 
@@ -178,12 +191,12 @@ insert maxDepth minLeaf rvs = loop 0
     z = Tip mempty
     loop ixLev !tt xs =
       let
-        r = rvs VG.! ixLev
+        r = rvs VG.! ixLev -- proj vector for current level
       in
         case tt of
 
           b@(Bin thr0 margin0 tl0 tr0) ->
-            if ixLev >= maxDepth || length xs <= minLeaf
+            if ixLev >= maxDepth
               then b -- return current subtree
               else
                 let
@@ -197,7 +210,7 @@ insert maxDepth minLeaf rvs = loop 0
 
           Tip xs0 -> do
             let xs' = xs <> xs0
-            if ixLev >= maxDepth || length xs <= minLeaf
+            if ixLev >= maxDepth || length xs' <= minLeaf
               then Tip xs' -- concat data in leaf
               else
                 let

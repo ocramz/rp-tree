@@ -3,15 +3,16 @@ module Data.RPTreeSpec where
 
 import Control.Monad (replicateM)
 import Data.Foldable (toList)
+import GHC.Word (Word64)
 
 -- conduit
 import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, foldl)
 -- hspec
-import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, runIO)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, sparse, dense,  RPTree, candidates, levels, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..))
+import Data.RPTree (forest, knn, knnPQ, sparse, dense,  RPTree, candidates, levels, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d)
 
 spec :: Spec
 spec = do
@@ -42,22 +43,29 @@ spec = do
       x `shouldBe` 17.3
 
   describe "Data.RPTree" $ do
-
+    s <- runIO randSeed
+    let
+      maxLevs = 20
+      n = 1000
+      ntrees = 10
+      minLeaf = 20
+      nchunk = 50
+      k = 5
+      -- dim = 2 -- vector dimension
+      q = fromListDv [0, 0] -- query
+      dats = dataSource n circle2d2  .|
+             C.map (\ x -> Embed x ()) -- data
+    tts <- sampleT s $ forest s maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
     it "knn : results should be close to the query" $ do
       let
-        maxLevs = 20
-        n = 1000
-        ntrees = 10
-        minLeaf = 20
-        nchunk = 50
-        k = 5
-        -- dim = 2 -- vector dimension
-        q = fromListDv [0, 0] -- query
-        dats = dataSource n genCircle2  .|
-               C.map (\ x -> Embed x ()) -- data
-      tts <- sampleT 1234 $ forest 1234 maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
-      let
         hits = knn metricL2 k tts q
+        dists = map fst $ toList hits
+      print hits
+      maximum dists `shouldSatisfy` (< 1)
+
+    it "knnPQ : results should be close to the query" $ do
+      let
+        hits = knnPQ metricL2 k tts q
         dists = map fst $ toList hits
       maximum dists `shouldSatisfy` (< 1)
 
@@ -80,25 +88,17 @@ genGaussMix dim = do
     else normalDv 3 2 dim
 
 -- binary mixture of two non-overlapping circles
-genCircle2 :: (Monad m) => GenT m (DVector Double)
-genCircle2 = do
+circle2d2 :: (Monad m) => GenT m (DVector Double)
+circle2d2 = do
   let
     d = fromListDv [2, 3]
     r = 1
   b <- bernoulli 0.5
   if b
-    then genCircle r
-    else (^+^ d) <$> genCircle r
+    then circle2d r
+    else (^+^ d) <$> circle2d r
 
-genCircle :: (Monad m) => Double -> GenT m (DVector Double)
-genCircle r = go
-  where
-    go = do
-      x <- uniformR (- r) r
-      y <- uniformR (- r) r
-      if x**2 + y**2 <= r
-        then pure $ fromListDv [x, y]
-        else go
+
 
 -- normalP :: Double -> Double -> Int -> Gen (P Double)
 -- normalP mu sig d = P <$> VG.replicateM d (normal mu sig)

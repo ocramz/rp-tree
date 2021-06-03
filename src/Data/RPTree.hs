@@ -49,19 +49,24 @@ Retrieval accuracy can be improved by populating multiple trees (i.e. a /random 
 -}
 module Data.RPTree (
   -- * Construction
-  -- tree,
-  forest
-  -- , defaultParams
+  tree
+  , forest
+  -- ** Parameters
+  , rpTreeCfg, RPTreeConfig(..)
   -- , ForestParams
   -- * Query
   , knn
+  , knnPQ
   -- * I/O
   , serialiseRPForest
   , deserialiseRPForest
-  -- * Validation
+  -- * Statistics
   , recallWith
   -- * Access
   , levels, points, candidates
+  -- * Validation
+  , treeStats, treeSize, leafSizes
+  , RPTreeStats
   -- * Types
   , Embed(..)
   -- ** RPTree
@@ -85,15 +90,16 @@ module Data.RPTree (
   -- * CSV
   , writeCsv
   -- * Testing
-  , randSeed, BenchConfig(..), normalSparse2
+  , BenchConfig(..), normalSparse2
   , liftC
   -- ** Random generation
+  , randSeed
   -- *** Conduit
   , dataSource
   , datS, datD
   -- *** Vector data
   , sparse, dense
-  , normal2
+  , normal2, circle2d
   ) where
 
 import Control.Monad (replicateM)
@@ -104,17 +110,20 @@ import Data.Functor.Identity (Identity(..))
 import Data.List (partition, sortBy)
 import Data.Monoid (Sum(..))
 import Data.Ord (comparing)
+import Data.Semigroup (Min(..))
 import GHC.Generics (Generic)
 import GHC.Word (Word64)
 
 -- containers
 import Data.Sequence (Seq, (|>))
-import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, insertWith)
+import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, insertWith, intersection)
 import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
 import Control.DeepSeq (NFData(..))
+-- psqueues
+import qualified Data.IntPSQ as PQ (IntPSQ, findMin, minView, empty, insert, fromList, toList)
 -- transformers
-import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState)
+import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState, get, put)
 import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
@@ -124,8 +133,8 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
-import Data.RPTree.Conduit (tree, forest, ForestParams, defaultParams, dataSource, liftC)
-import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2)
+import Data.RPTree.Conduit (tree, forest, dataSource, liftC, rpTreeCfg, RPTreeConfig(..))
+import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2, circle2d)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), levels, points, Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datS, datD)
 import Data.RPTree.Draw (draw, writeCsv)
@@ -149,6 +158,20 @@ knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
 knn distf k tts q = sortByVG fst cs
   where
     cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ VG.take k $ fold $ (`candidates` q) <$> tts
+
+-- | Same as 'knn' but with a (hopefully) faster implementation
+knnPQ :: (Ord p, Inner SVector v, VU.Unbox d, RealFrac d) =>
+         (u d -> v d -> p) -- ^ distance function
+      -> Int -- ^ k neighbors
+      -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
+      -> v d -- ^ query point
+      -> V.Vector (p, Embed u d x)
+knnPQ distf k tts q = sortByVG fst cs
+  where
+    cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ fold cstt
+    cstt = (takeFromPQ nsing) . (`candidatesPQ` q) <$> tts
+    nsing = (k `div` n) `max` 1
+    n = length tts
 
 
 -- | average recall-at-k, computed over a set of trees
@@ -193,7 +216,33 @@ candidates :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
 candidates (RPTree rvs tt) x = go 0 tt
   where
     go _     (Tip xs)                     = xs
-    go ixLev (Bin thr margin ltree rtree) = do
+    go ixLev (Bin thr margin ltree rtree) =
+      let
+        (mglo, mghi) = getMargin margin
+        r = rvs VG.! ixLev
+        proj = r `inner` x
+        i' = succ ixLev
+        dl = abs (mglo - proj) -- left margin
+        dr = abs (mghi - proj) -- right margin
+      in
+        if | proj < thr &&
+             dl > dr -> go i' ltree <> go i' rtree
+           | proj < thr  -> go i' ltree
+           | proj > thr &&
+             dl < dr -> go i' ltree <> go i' rtree
+           | otherwise   -> go i' rtree
+
+
+-- | like 'candidates' but outputs an ordered 'IntPQ' where the margin to the median projection is interpreted as queue priority
+candidatesPQ :: (Fractional d, Ord d, Inner SVector v, VU.Unbox d) =>
+               RPTree d xs
+            -> v d -- ^ query point
+            -> PQ.IntPSQ d xs
+candidatesPQ (RPTree rvs tt) x = evalS $ go 0 tt PQ.empty (1/0)
+  where
+    go _ (Tip xs) acc dprev =
+      insPQ dprev xs acc
+    go ixLev (Bin thr margin ltree rtree) acc dprev = do
       let
         (mglo, mghi) = getMargin margin
         r = rvs VG.! ixLev
@@ -202,16 +251,66 @@ candidates (RPTree rvs tt) x = go 0 tt
         dl = abs (mglo - proj) -- left margin
         dr = abs (mghi - proj) -- right margin
       if | proj < thr &&
-           dl > dr -> go i' ltree <> go i' rtree
-         | proj < thr  -> go i' ltree
+           dl > dr -> do
+             ll <- go i' ltree acc (min dprev dl)
+             lr <- go i' rtree acc (min dprev dr)
+             pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
+         | proj < thr  -> go i' ltree acc (min dprev dl)
          | proj > thr &&
-           dl < dr -> go i' ltree <> go i' rtree
-         | otherwise   -> go i' rtree
+           dl < dr -> do
+             ll <- go i' ltree acc (min dprev dl)
+             lr <- go i' rtree acc (min dprev dr)
+             pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
+         | otherwise -> go i' rtree acc (min dprev dr)
+
+takeFromPQ :: (Ord p, Foldable t, Monoid (t a)) =>
+              Int -- ^ number of elements to keep
+           -> PQ.IntPSQ p (t a)
+           -> t a
+takeFromPQ n pq = foldMap snd $ reverse $ go [] 0 pq
+  where
+    go acc nacc q = case PQ.minView q of
+      Nothing -> acc
+      Just (_, p, xs, pqRest) ->
+        let
+          nxs = length xs
+          nacc' = nacc + nxs
+        in if nacc' < n
+           then go ((p, xs) : acc) nacc' pqRest
+           else acc
+
+type S = State Int
+evalS :: S a -> a
+evalS = flip evalState 0
+
+insPQ :: (Ord p) => p -> v -> PQ.IntPSQ p v -> S (PQ.IntPSQ p v)
+insPQ p x pq = do
+  i <- get
+  let
+    pq' = PQ.insert i p x pq
+  put (succ i)
+  pure pq'
 
 
 
 
+data RPTreeStats = RPTreeStats {
+  rptsLength :: Int
+                               } deriving (Eq, Show)
 
+treeStats :: RPTree d a -> RPTreeStats
+treeStats (RPTree _ tt) = RPTreeStats l
+  where
+    l = length tt
+
+
+-- | How many data items are stored in the 'RPTree'
+treeSize :: (Foldable t) => RPTree d (t a) -> Int
+treeSize = sum . leafSizes
+
+-- | How many data items are stored in each leaf of the 'RPTree'
+leafSizes :: Foldable t => RPTree d (t a) -> RPT d Int
+leafSizes (RPTree _ tt) = length <$> tt 
 
 -- pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)
 -- pqSeq pqq = go pqq mempty

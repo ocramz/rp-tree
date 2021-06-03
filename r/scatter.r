@@ -1,9 +1,5 @@
 library(tidyverse)
 
-fname <- "scatter_data.csv"
-plot_path <- "scatter.png"
-
-
 scatter <- function( fin, fout){
     df <- read_csv( fin , col_names=c( 'x', 'y', 'i'), col_types=c( col_double(), col_double(), col_integer()))
 
@@ -19,6 +15,6 @@ scatter <- function( fin, fout){
     ggsave( fout )
 }
 
-scatter( "scatter_data.csv", "scatter0.pdf" )
-scatter( "scatter_data_rt2.csv", "scatter1.pdf" )
+scatter( "scatter_data_2.csv", "scatter0_2.pdf" )
+## scatter( "scatter_data_rt2.csv", "scatter1.pdf" )
 

@@ -1,3 +1,7 @@
+0.4
+
+- add function to compute the forest construction parameters from the dataset dimensions (rpTreeCfg)
+
 0.3.6
 
 - relax lower dependency bounds to ensure it builds with GHC 8.6.5 (== stackage lts 14.27) as well

@@ -66,7 +66,9 @@ instance Exception RPTError
 data Margin a = Margin {
   cMarginLow :: !(Max a) -- ^ lower bound on the cut point
   , cMarginHigh :: !(Min a) -- ^ upper bound
-                   } deriving (Eq, Show, Generic)
+                   } deriving (Eq, Generic)
+instance Show a => Show (Margin a) where
+  show (Margin lo hi) = unwords ["low", show (getMax lo), "high", show (getMin hi)]
 instance (Serialise a) => Serialise (Margin a)
 getMargin :: Margin a -> (a, a)
 getMargin (Margin ml mh) = (getMax ml, getMin mh)

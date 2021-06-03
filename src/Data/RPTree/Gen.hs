@@ -10,18 +10,15 @@ import Control.Monad (replicateM, foldM)
 -- containers
 import qualified Data.IntMap as IM (IntMap, insert, toList)
 -- splitmix-distribitions
-import System.Random.SplitMix.Distributions (Gen, GenT, stdUniform, bernoulli, exponential, normal, discrete, categorical)
+import System.Random.SplitMix.Distributions (Gen, GenT, uniformR, stdUniform, bernoulli, exponential, normal, discrete, categorical)
 -- transformers
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Trans.State (StateT(..), get, put, runStateT, evalStateT, State, runState, evalState)
--- vector
-
 
 import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!))
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 
-
-import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..))
+import Data.RPTree.Internal (RPTree(..), RPT(..), SVector(..), fromListSv, DVector(..), fromListDv)
 
 
 -- | Sample without replacement with a single pass over the data
@@ -114,6 +111,16 @@ mixtureN pgs = go
           let p = gs !! i
           p
 
+
+circle2d :: (Monad m) => Double -> GenT m (DVector Double)
+circle2d r = go
+  where
+    go = do
+      x <- uniformR (- r) r
+      y <- uniformR (- r) r
+      if x**2 + y**2 <= r
+        then pure $ fromListDv [x, y]
+        else go
 
 normalSparse2 :: Monad m => Double -> Int -> GenT m (SVector Double)
 normalSparse2 pnz d = do
