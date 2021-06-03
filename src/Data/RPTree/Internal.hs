@@ -368,6 +368,7 @@ a4 b4
 -}
 
 
+type VE v a x = V.Vector (Embed v a x)
 
 
 {-# SCC partitionAtMedian #-}
@@ -375,8 +376,10 @@ a4 b4
 partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
                      u a -- ^ projection vector
                   -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
-                  -> (a, Margin a, V.Vector (Embed v a x), V.Vector (Embed v a x)) -- ^ median, margin, smaller, larger
-partitionAtMedian r xs = (thr, margin, ll, rr)
+                  -> Either (VE v a x) (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
+partitionAtMedian r xs
+  | n < 3 = Left xs
+  | otherwise = Right (thr, margin, ll, rr)
   where
     (ll, rr) = (VG.take nh xs', VG.drop nh xs')
     -- (pjl, pjr) = (VG.head inns, VG.last inns) -- (min, max) inner product values

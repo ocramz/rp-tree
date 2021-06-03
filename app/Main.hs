@@ -62,7 +62,7 @@ embedC = C.map (\ x -> Embed x ())
 -- renderTree0 :: Int -> IO ()
 renderTree0 = do
   let
-    n = 10000
+    n = 2000
     dim = 2
     -- maxd = 6
     -- minl = 20

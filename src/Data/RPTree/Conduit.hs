@@ -9,7 +9,6 @@ module Data.RPTree.Conduit
     tree,
   forest,
   RPTreeConfig(..),
-  fpMaxTreeDepth,
   rpTreeCfg
   -- ** helpers
   , dataSource
@@ -138,12 +137,12 @@ rpTreeCfg :: Integral a =>
           -> RPTreeConfig
 rpTreeCfg n d = RPCfg maxd minl ntree nchunk pnz
   where
-    minl = 20
+    minl = 3
     maxd = ceiling $ logBase 2 (fromIntegral n / fromIntegral minl)
     ntree = 3
     nchunk = ceiling $ fromIntegral n / 100
     pnzMin = 1 / logBase 10 (fromIntegral d)
-    pnz = pnzMin `max` 1.0
+    pnz = pnzMin `min` 1.0
 
 
 
@@ -199,25 +198,30 @@ insert maxDepth minLeaf rvs = loop 0
             if ixLev >= maxDepth
               then b -- return current subtree
               else
-                let
-                  (thr, margin, ll, rr) =
-                    partitionAtMedian r xs
-                  margin' = margin0 <> margin
-                  thr' = (thr0 + thr) / 2
-                  tl = loop (ixLev + 1) tl0 ll
-                  tr = loop (ixLev + 1) tr0 rr
-                in Bin thr' margin' tl tr
+              case partitionAtMedian r xs of
+                Left ll -> Bin thr0 margin0 tl tr0
+                  where
+                    tl = loop (ixLev + 1) tl0 ll
+                Right (thr, margin, ll, rr) -> Bin thr' margin' tl tr
+                  where
+                    margin' = margin0 <> margin
+                    thr' = (thr0 + thr) / 2
+                    tl = loop (ixLev + 1) tl0 ll
+                    tr = loop (ixLev + 1) tr0 rr
 
           Tip xs0 -> do
             let xs' = xs <> xs0
             if ixLev >= maxDepth || length xs' <= minLeaf
               then Tip xs' -- concat data in leaf
               else
-                let
-                  (thr, margin, ll, rr) = partitionAtMedian r xs'
-                  tl = loop (ixLev + 1) z ll
-                  tr = loop (ixLev + 1) z rr
-                in Bin thr margin tl tr
+              case partitionAtMedian r xs' of
+                Left ll -> Tip ll -- Bin thr margin tl tr
+                  -- where
+                  --   tl = loop (ixLev + 1) z ll
+                Right (thr, margin, ll, rr) -> Bin thr margin tl tr
+                  where
+                    tl = loop (ixLev + 1) z ll
+                    tr = loop (ixLev + 1) z rr
 
 
 -- | Aggregate the input stream in chunks of a given size (semantics of 'C.chunksOf'), and fold over the resulting stream building up an accumulator structure (e.g. a tree)
