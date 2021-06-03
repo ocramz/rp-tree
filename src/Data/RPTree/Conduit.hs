@@ -137,7 +137,7 @@ rpTreeCfg :: Integral a =>
           -> RPTreeConfig
 rpTreeCfg n d = RPCfg maxd minl ntree nchunk pnz
   where
-    minl = 3
+    minl = 10
     maxd = ceiling $ logBase 2 (fromIntegral n / fromIntegral minl)
     ntree = 3
     nchunk = ceiling $ fromIntegral n / 100
@@ -215,9 +215,7 @@ insert maxDepth minLeaf rvs = loop 0
               then Tip xs' -- concat data in leaf
               else
               case partitionAtMedian r xs' of
-                Left ll -> Tip ll -- Bin thr margin tl tr
-                  -- where
-                  --   tl = loop (ixLev + 1) z ll
+                Left ll -> Tip ll
                 Right (thr, margin, ll, rr) -> Bin thr margin tl tr
                   where
                     tl = loop (ixLev + 1) z ll

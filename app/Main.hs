@@ -62,7 +62,7 @@ embedC = C.map (\ x -> Embed x ())
 -- renderTree0 :: Int -> IO ()
 renderTree0 = do
   let
-    n = 2000
+    n = 100
     dim = 2
     -- maxd = 6
     -- minl = 20
@@ -90,6 +90,9 @@ labeledV xs = do
   let n = length xs
   pure $ V.zip xs (V.replicate n i)
 
+labeledV' :: (Enum b) =>
+             V.Vector (Embed v e a)
+          -> State b (V.Vector (v e, b))
 labeledV' xs = do
   i <- get
   put (succ i)

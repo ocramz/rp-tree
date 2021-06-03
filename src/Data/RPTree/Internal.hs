@@ -49,7 +49,9 @@ import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 data Embed v e a = Embed {
   eEmbed :: !(v e) -- ^ vector embedding
   , eData :: !a -- ^ data item
-                       } deriving (Eq, Ord, Show, Generic, Functor)
+                       } deriving (Eq, Ord, Generic, Functor)
+instance (Show (v e), Show e, Show a) => Show (Embed v e a) where
+  show (Embed v dat) = unwords [show v, show dat]
 instance (NFData (v e), NFData a) => NFData (Embed v e a)
 instance (Serialise (v e), Serialise a) => Serialise (Embed v e a)
 

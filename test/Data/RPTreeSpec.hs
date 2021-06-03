@@ -63,13 +63,19 @@ spec = do
       print hits
       maximum dists `shouldSatisfy` (< 1)
 
-    it "knnPQ : results should be close to the query" $ do
-      let
-        hits = knnPQ metricL2 k tts q
-        dists = map fst $ toList hits
-      maximum dists `shouldSatisfy` (< 1)
 
 -- test data
+
+-- binary mixture of two non-overlapping circles
+circle2d2 :: (Monad m) => GenT m (DVector Double)
+circle2d2 = do
+  let
+    d = fromListDv [2, 3]
+    r = 1
+  b <- bernoulli 0.5
+  if b
+    then circle2d r
+    else (^+^ d) <$> circle2d r
 
 normalSv :: (Monad m) => Double -> Double -> Int -> GenT m (SVector Double)
 normalSv mu sig dim = sparse 0.5 dim (normal mu sig)
@@ -87,16 +93,7 @@ genGaussMix dim = do
     then normalDv 0 1 dim
     else normalDv 3 2 dim
 
--- binary mixture of two non-overlapping circles
-circle2d2 :: (Monad m) => GenT m (DVector Double)
-circle2d2 = do
-  let
-    d = fromListDv [2, 3]
-    r = 1
-  b <- bernoulli 0.5
-  if b
-    then circle2d r
-    else (^+^ d) <$> circle2d r
+
 
 
 
