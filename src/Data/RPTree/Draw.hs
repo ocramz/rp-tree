@@ -23,11 +23,25 @@ import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
 
 
 -- | Encode dataset as CSV and save into file
-writeCsv :: (Show a, Show b, VU.Unbox a) =>
+-- writeCsv :: (Show a, Show b, VU.Unbox a) =>
+--             FilePath
+--          -> [(DVector a, b)] 
+--          -> IO ()
+writeCsv :: (Foldable t, VU.Unbox a, Show a, Show b) =>
             FilePath
-         -> [(DVector a, b)] -- ^ data point, label
+         -> t (V.Vector (DVector a, b)) -- ^ data point, label
          -> IO ()
-writeCsv fp ds = LBS.writeFile fp $ BSB.toLazyByteString $ toCsv ds
+writeCsv fp ds = LBS.writeFile fp $ BSB.toLazyByteString $ toCsvV ds
+
+
+toCsv :: (Foldable t, Show a, Show b, VU.Unbox a) =>
+         t (DVector a, b) -> BSB.Builder
+toCsv = foldMap (\(r, i) -> toCsvRow r i <> BSB.charUtf8 '\n' )
+-- toCsv rs = mconcat [toCsvRow r i <> BSB.charUtf8 '\n' | (r, i) <- rs]
+
+toCsvV :: (Foldable t, VU.Unbox a, Show a, Show b) =>
+          t (V.Vector (DVector a, b)) -> BSB.Builder
+toCsvV = foldMap (\v -> foldMap (\(r, i) -> toCsvRow r i <> BSB.charUtf8 '\n' ) v)
 
 toCsvRow :: (Show a, Show b, VU.Unbox a) =>
             DVector a
@@ -37,10 +51,6 @@ toCsvRow dv i = BSB.string7 $ intercalate "," [show x, show y, show i]
   where
     (x:y:_) = toListDv dv
 
-toCsv :: (Show a, Show b, VU.Unbox a) =>
-         [(DVector a, b)] -> BSB.Builder
-toCsv rs = mconcat [toCsvRow r i <> BSB.charUtf8 '\n' | (r, i) <- rs]
-
 -- | Render a tree to stdout
 --
 -- Useful for debugging
@@ -48,18 +58,18 @@ toCsv rs = mconcat [toCsvRow r i <> BSB.charUtf8 '\n' | (r, i) <- rs]
 -- This should be called only for small trees, otherwise the printed result quickly overflows the screen and becomes hard to read.
 --
 -- NB : prints distance information rounded to two decimal digits
-draw :: (Show a, Boxed a, PrintfArg v) => RPTree v a -> IO ()
+draw :: (Show a, Boxed a, PrintfArg v) => RPTree v l a -> IO ()
 draw = drawRPT . _rpTree
 
-drawRPT :: (Show a, Boxed a, PrintfArg v) => RPT v a -> IO ()
+drawRPT :: (Show a, Boxed a, PrintfArg v) => RPT v l a -> IO ()
 drawRPT = putStrLn . toStringRPT
 
-toStringRPT :: (Show a, Boxed a, PrintfArg v) => RPT v a -> String
+toStringRPT :: (Show a, Boxed a, PrintfArg v) => RPT v l a -> String
 toStringRPT = B.render . toBox
 
-toBox :: (Show a, Boxed a, PrintfArg v) => RPT v a -> B.Box
+toBox :: (Show a, Boxed a, PrintfArg v) => RPT v l a -> B.Box
 toBox = \case
-  (Bin thr _ tl tr) ->
+  (Bin _ thr _ tl tr) ->
     txt (node thr) `stack` (toBox tl `byside` toBox tr)
   Tip xs -> boxed xs -- tipData xs -- txt $ show x
   where
@@ -84,3 +94,18 @@ byside l r = B.hcat B.top [l, r]
 
 stack :: B.Box -> B.Box -> B.Box
 stack t b = B.vcat B.center1 [t, b]
+
+-- -- tree to graphviz dot format
+
+data DotState = DS !Int [Int]
+s0 :: DotState
+s0 = DS 0 []
+
+-- toDot = go s0
+--   where
+--     go (DS i istack) = \case
+--       Tip xs -> undefined
+
+-- pop (DS i is)
+--   | length is > 1 = Just (i , head is)
+--   | otherwise = Nothing

@@ -17,6 +17,7 @@ module Data.RPTree.Internal where
 import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.ST (runST)
+import Data.Bitraversable (Bitraversable(..))
 import Data.Function ((&))
 import Data.Foldable (fold, foldl', toList)
 import Data.Functor.Identity (Identity(..))
@@ -128,17 +129,18 @@ toListDv (DV v) = VU.toList v
 -- | Internal
 --
 -- one projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
-data RPT d a =
+data RPT d l a =
   Bin {
-  _rpThreshold ::  !d
+  _rpBranchLabel :: l
+  , _rpThreshold ::  !d
   , _rpMargin :: {-# UNPACK #-} !(Margin d)
-  , _rpL :: !(RPT d a)
-  , _rpR :: !(RPT d a) }
+  , _rpL :: !(RPT d l a)
+  , _rpR :: !(RPT d l a) }
   | Tip { _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
-instance (Serialise a, Serialise d) => Serialise (RPT d a)
+instance (Serialise a, Serialise l, Serialise d) => Serialise (RPT d l a)
 -- makeLensesFor [("_rpData", "rpData")] ''RPT
-instance (NFData v, NFData a) => NFData (RPT v a)
+instance (NFData v, NFData l, NFData a) => NFData (RPT v l a)
 
 -- | Random projection trees
 --
@@ -147,18 +149,18 @@ instance (NFData v, NFData a) => NFData (RPT v a)
 -- We keep them separate to leverage the Functor instance for postprocessing and visualization
 --
 -- One projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
-data RPTree d a = RPTree {
+data RPTree d l a = RPTree {
   _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
-  , _rpTree :: !(RPT d a)
+  , _rpTree :: !(RPT d l a)
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
-instance (Serialise d, Serialise a, VU.Unbox d) => Serialise (RPTree d a)
+instance (Serialise d, Serialise l, Serialise a, VU.Unbox d) => Serialise (RPTree d l a)
 -- makeLensesFor [("_rpTree", "rpTree")] ''RPTree
-instance (NFData a, NFData d) => NFData (RPTree d a)
+instance (NFData a, NFData l, NFData d) => NFData (RPTree d l a)
 
 -- | A random projection forest is an ordered set of 'RPTree's
 --
 -- This supports efficient updates of the ensemble in the streaming/online setting.
-type RPForest d a = IM.IntMap (RPTree d a)
+type RPForest d a = IM.IntMap (RPTree d () a)
 
 -- | Serialise each tree in the 'RPForest' as a separate bytestring
 serialiseRPForest :: (Serialise d, Serialise a, VU.Unbox d) =>
@@ -182,11 +184,11 @@ deserialiseRPForest bss = case deserialiseOrFail `traverse` bss of
 -- leaves = (^.. rpTreeData)
 
 -- | Number of tree levels
-levels :: RPTree d a -> Int
+levels :: RPTree d l a -> Int
 levels (RPTree v _) = VG.length v
 
 -- | Set of data points used to construct the index
-points :: Monoid m => RPTree d m -> m
+points :: Monoid m => RPTree d l m -> m
 points (RPTree _ t) = fold t
 
 -- -- points in 2d

@@ -188,7 +188,7 @@ recallWith distf tt k q = sum rs / fromIntegral n
 
 recallWith1 :: (Inner SVector v, Ord d, VU.Unbox d, Fractional p, Ord a, Ord x, Ord (u d), Num d) =>
               (u d -> v d -> a) -- ^ distance function
-           -> RPTree d (V.Vector (Embed u d x))
+           -> RPTree d l (V.Vector (Embed u d x))
            -> Int -- ^ k : number of nearest neighbors to consider
            -> v d -- ^ query point
            -> p
@@ -210,13 +210,13 @@ set = foldl (flip S.insert) mempty
 --
 -- in case of a narrow margin, collect both branches of the tree
 candidates :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
-              RPTree d xs
+              RPTree d l xs
            -> v d -- ^ query point
            -> xs
 candidates (RPTree rvs tt) x = go 0 tt
   where
     go _     (Tip xs)                     = xs
-    go ixLev (Bin thr margin ltree rtree) =
+    go ixLev (Bin _ thr margin ltree rtree) =
       let
         (mglo, mghi) = getMargin margin
         r = rvs VG.! ixLev
@@ -235,14 +235,14 @@ candidates (RPTree rvs tt) x = go 0 tt
 
 -- | like 'candidates' but outputs an ordered 'IntPQ' where the margin to the median projection is interpreted as queue priority
 candidatesPQ :: (Fractional d, Ord d, Inner SVector v, VU.Unbox d) =>
-               RPTree d xs
+               RPTree d l xs
             -> v d -- ^ query point
             -> PQ.IntPSQ d xs
 candidatesPQ (RPTree rvs tt) x = evalS $ go 0 tt PQ.empty (1/0)
   where
     go _ (Tip xs) acc dprev =
       insPQ dprev xs acc
-    go ixLev (Bin thr margin ltree rtree) acc dprev = do
+    go ixLev (Bin _ thr margin ltree rtree) acc dprev = do
       let
         (mglo, mghi) = getMargin margin
         r = rvs VG.! ixLev
@@ -298,18 +298,18 @@ data RPTreeStats = RPTreeStats {
   rptsLength :: Int
                                } deriving (Eq, Show)
 
-treeStats :: RPTree d a -> RPTreeStats
+treeStats :: RPTree d l a -> RPTreeStats
 treeStats (RPTree _ tt) = RPTreeStats l
   where
     l = length tt
 
 
 -- | How many data items are stored in the 'RPTree'
-treeSize :: (Foldable t) => RPTree d (t a) -> Int
+treeSize :: (Foldable t) => RPTree d l (t a) -> Int
 treeSize = sum . leafSizes
 
 -- | How many data items are stored in each leaf of the 'RPTree'
-leafSizes :: Foldable t => RPTree d (t a) -> RPT d Int
+leafSizes :: Foldable t => RPTree d l (t a) -> RPT d l Int
 leafSizes (RPTree _ tt) = length <$> tt 
 
 -- pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)

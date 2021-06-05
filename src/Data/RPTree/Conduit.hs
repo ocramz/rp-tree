@@ -62,7 +62,7 @@ tree :: (Monad m, Inner SVector v) =>
      -> Double -- ^ nonzero density of projection vectors
      -> Int -- ^ dimension of projection vectors
      -> C.ConduitT () (Embed v Double x) m () -- ^ data source
-     -> m (RPTree Double (V.Vector (Embed v Double x)))
+     -> m (RPTree Double () (V.Vector (Embed v Double x)))
 tree seed maxDepth minLeaf n pnz dim src = do
   let
     rvs = sample seed $ V.replicateM maxDepth (sparse pnz dim stdNormal)
@@ -84,7 +84,7 @@ insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
            (Embed v d x)
            o
            m
-           (RPT d (V.Vector (Embed v d x))) 
+           (RPT d () (V.Vector (Embed v d x))) 
 insertC maxDepth minLeaf n rvs = chunkedAccum n z (insert maxDepth minLeaf rvs)
   where
     z = Tip mempty
@@ -157,7 +157,7 @@ insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector 
                 (Embed v d x)
                 o
                 m
-                (IM.IntMap (RPT d (V.Vector (Embed v d x))))
+                (IM.IntMap (RPT d () (V.Vector (Embed v d x))))
 insertMultiC maxd minl n rvss = chunkedAccum n im0 (insertMulti maxd minl rvss)
   where
     im0 = IM.map (const z) rvss
@@ -169,9 +169,9 @@ insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) 
                Int
             -> Int
             -> IM.IntMap (v1 (u d)) -- ^ projection vectors
-            -> IM.IntMap (RPT d (V.Vector (Embed v d x))) -- ^ accumulator of subtrees
+            -> IM.IntMap (RPT d () (V.Vector (Embed v d x))) -- ^ accumulator of subtrees
             -> V.Vector (Embed v d x) -- ^ data chunk
-            -> IM.IntMap (RPT d (V.Vector (Embed v d x)))
+            -> IM.IntMap (RPT d () (V.Vector (Embed v d x)))
 insertMulti maxd minl rvss tacc xs =
   flip IM.mapWithKey tacc $ \ !i !t -> case IM.lookup i rvss of
                                       Just !rvs -> insert maxd minl rvs t xs
@@ -182,9 +182,9 @@ insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
           Int -- ^ max tree depth
        -> Int -- ^ min leaf size
        -> v1 (u d) -- ^ projection vectors
-       -> RPT d (V.Vector (Embed v d x)) -- ^ accumulator
+       -> RPT d () (V.Vector (Embed v d x)) -- ^ accumulator
        -> V.Vector (Embed v d x) -- ^ data chunk
-       -> RPT d (V.Vector (Embed v d x))
+       -> RPT d () (V.Vector (Embed v d x))
 insert maxDepth minLeaf rvs = loop 0
   where
     z = Tip mempty
@@ -194,15 +194,15 @@ insert maxDepth minLeaf rvs = loop 0
       in
         case tt of
 
-          b@(Bin thr0 margin0 tl0 tr0) ->
+          b@(Bin _ thr0 margin0 tl0 tr0) ->
             if ixLev >= maxDepth
               then b -- return current subtree
               else
               case partitionAtMedian r xs of
-                Left ll -> Bin thr0 margin0 tl tr0
+                Left ll -> Bin () thr0 margin0 tl tr0
                   where
                     tl = loop (ixLev + 1) tl0 ll
-                Right (thr, margin, ll, rr) -> Bin thr' margin' tl tr
+                Right (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
                   where
                     margin' = margin0 <> margin
                     thr' = (thr0 + thr) / 2
@@ -216,7 +216,7 @@ insert maxDepth minLeaf rvs = loop 0
               else
               case partitionAtMedian r xs' of
                 Left ll -> Tip ll
-                Right (thr, margin, ll, rr) -> Bin thr margin tl tr
+                Right (thr, margin, ll, rr) -> Bin () thr margin tl tr
                   where
                     tl = loop (ixLev + 1) z ll
                     tr = loop (ixLev + 1) z rr
