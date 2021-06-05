@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# language DeriveAnyClass #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 -- {-# LANGUAGE UndecidableInstances #-}
@@ -17,6 +18,8 @@ module Data.RPTree.Internal where
 import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.ST (runST)
+import Data.Bifoldable (Bifoldable(..))
+import Data.Bifunctor (Bifunctor(..))
 import Data.Bitraversable (Bitraversable(..))
 import Data.Function ((&))
 import Data.Foldable (fold, foldl', toList)
@@ -79,7 +82,8 @@ instance (NFData a) => NFData (Margin a)
 -- | Used for updating in a streaming setting
 instance (Ord a) => Semigroup (Margin a) where
   Margin lo1 hi1 <> Margin lo2 hi2 = Margin (lo1 <> lo2) (hi1 <> hi2)
-
+instance (Ord a, Num a) => Monoid (Margin a) where
+  mempty = Margin (Max 0) (Min 0)
 
 -- | Sparse vectors with unboxed components
 data SVector a = SV { svDim :: {-# UNPACK #-} !Int
@@ -138,6 +142,18 @@ data RPT d l a =
   , _rpR :: !(RPT d l a) }
   | Tip { _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+instance Bifunctor (RPT d) where
+  bimap f g = \case
+    Bin x thr mg tl tr -> Bin (f x) thr mg (bimap f g tl) (bimap f g tr)
+    Tip y -> Tip (g y)
+instance Bifoldable (RPT d) where
+  bifoldMap f g = \case
+    Bin x _ _ tl tr -> f x <> bifoldMap f g tl <> bifoldMap f g tr
+    Tip y -> g y
+instance Bitraversable (RPT d) where
+  bitraverse f g = \case
+    Bin x thr mg tl tr -> Bin <$> f x <*> pure thr <*> pure mg <*> bitraverse f g tl <*> bitraverse f g tr
+    Tip y -> Tip <$> g y
 instance (Serialise a, Serialise l, Serialise d) => Serialise (RPT d l a)
 -- makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData l, NFData a) => NFData (RPT v l a)

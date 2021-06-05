@@ -1,7 +1,11 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# language LambdaCase #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Draw where
 
+import Data.Bifoldable (Bifoldable(..))
+import Data.Bifunctor (Bifunctor(..))
+import Data.Bitraversable (Bitraversable(..))
 import Data.List (intercalate)
 import Text.Printf (PrintfArg, printf)
 
@@ -10,8 +14,12 @@ import qualified Text.PrettyPrint.Boxes as B (Box, render, emptyBox, vcat, hcat,
 -- bytestring
 import qualified Data.ByteString.Lazy    as LBS (ByteString, writeFile)
 import qualified Data.ByteString.Builder as BSB (Builder, toLazyByteString, string7, charUtf8)
--- -- mtl
--- import Control.Monad.State (MonadState(..))
+-- containers
+import qualified Data.Set as S (Set, insert, fromList)
+-- mtl
+import Control.Monad.State (MonadState(..), modify)
+-- transformers
+import Control.Monad.Trans.State (State, evalState)
 -- vector
 import qualified Data.Vector as V (Vector, replicateM)
 import qualified Data.Vector.Generic as VG (Vector(..), map, sum, unfoldr, unfoldrM, length, replicateM, (!))
@@ -95,17 +103,56 @@ byside l r = B.hcat B.top [l, r]
 stack :: B.Box -> B.Box -> B.Box
 stack t b = B.vcat B.center1 [t, b]
 
+
+
 -- -- tree to graphviz dot format
 
-data DotState = DS !Int [Int]
-s0 :: DotState
-s0 = DS 0 []
+toDot :: String -> RPT d x a -> LBS.ByteString
+toDot name tt = BSB.toLazyByteString $ open <> x <> close
+  where
+    x = foldl insf mempty $ toEdges tt
+      where
+        insf acc (Edge i1 i2) = acc <> BSB.string7 (unwords [show i1, "->", show i2, "\n"] )
+    open = BSB.string7 $ unwords ["digraph" , name, "{"]
+    close = BSB.string7 "}"
 
--- toDot = go s0
---   where
---     go (DS i istack) = \case
---       Tip xs -> undefined
+data Edge = Edge Int Int deriving (Eq, Ord, Show)
 
--- pop (DS i is)
---   | length is > 1 = Just (i , head is)
---   | otherwise = Nothing
+-- toDot :: RPT d Int a -> Stack Edge
+toEdges :: RPT d x a -> S.Set Edge
+toEdges = S.fromList . go [] [] . labelBranches
+  where
+    go s acc = \case
+      Tip _ -> acc
+      Bin i _ _ tl tr ->
+        let
+          acc' = maybe acc (\i0 -> push (Edge i0 i) acc) (pop s)
+          s' = push i s
+        in
+          go s' acc' tl <> go s' acc tr
+
+
+
+labelBranches :: Bitraversable t => t x d -> t Int d
+labelBranches = flip evalState 0 . bitraverse counter pure
+
+counter :: (MonadState Int m) => x -> m Int
+counter _ = do
+  i <- get
+  modify succ
+  pure i
+
+type Stack a = [a]
+push :: a -> Stack a -> Stack a
+push = (:)
+pop :: Stack a -> Maybe a
+pop xs
+  | null xs = Nothing
+  | otherwise = Just $ head xs
+
+
+-- tt0 :: RPT Integer () [a]
+tt0 = Bin [] 0 mempty tl t
+  where
+    tl = Bin [] 1 mempty (Bin [] 2 mempty t t) (Bin [] 3 mempty t t)
+    t = Tip []

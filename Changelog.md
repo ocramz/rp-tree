@@ -1,6 +1,7 @@
 0.4
 
 - add function to compute the forest construction parameters from the dataset dimensions (rpTreeCfg)
+- add type parameter to RPTree to label tree branching points
 
 0.3.6
 
