@@ -79,7 +79,7 @@ toBox :: (Show a, Boxed a, PrintfArg v) => RPT v l a -> B.Box
 toBox = \case
   (Bin _ thr _ tl tr) ->
     txt (node thr) `stack` (toBox tl `byside` toBox tr)
-  Tip xs -> boxed xs -- tipData xs -- txt $ show x
+  Tip _ xs -> boxed xs -- tipData xs -- txt $ show x
   where
     node x = printf "%5.2f" x -- (show x)
 
@@ -123,7 +123,7 @@ toEdges :: RPT d x a -> S.Set Edge
 toEdges = S.fromList . go [] [] . labelBranches
   where
     go s acc = \case
-      Tip _ -> acc
+      Tip i _ -> acc
       Bin i _ _ tl tr ->
         let
           acc' = maybe acc (\i0 -> push (Edge i0 i) acc) (pop s)
@@ -155,4 +155,4 @@ pop xs
 tt0 = Bin [] 0 mempty tl t
   where
     tl = Bin [] 1 mempty (Bin [] 2 mempty t t) (Bin [] 3 mempty t t)
-    t = Tip []
+    t = Tip [] []

@@ -140,20 +140,22 @@ data RPT d l a =
   , _rpMargin :: {-# UNPACK #-} !(Margin d)
   , _rpL :: !(RPT d l a)
   , _rpR :: !(RPT d l a) }
-  | Tip { _rpData :: !a }
+  | Tip {
+      _rpTipLabel :: l
+    , _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 instance Bifunctor (RPT d) where
   bimap f g = \case
     Bin x thr mg tl tr -> Bin (f x) thr mg (bimap f g tl) (bimap f g tr)
-    Tip y -> Tip (g y)
+    Tip x y -> Tip (f x) (g y)
 instance Bifoldable (RPT d) where
   bifoldMap f g = \case
     Bin x _ _ tl tr -> f x <> bifoldMap f g tl <> bifoldMap f g tr
-    Tip y -> g y
+    Tip x y -> f x <> g y
 instance Bitraversable (RPT d) where
   bitraverse f g = \case
     Bin x thr mg tl tr -> Bin <$> f x <*> pure thr <*> pure mg <*> bitraverse f g tl <*> bitraverse f g tr
-    Tip y -> Tip <$> g y
+    Tip x y -> Tip <$> f x <*> g y
 instance (Serialise a, Serialise l, Serialise d) => Serialise (RPT d l a)
 -- makeLensesFor [("_rpData", "rpData")] ''RPT
 instance (NFData v, NFData l, NFData a) => NFData (RPT v l a)

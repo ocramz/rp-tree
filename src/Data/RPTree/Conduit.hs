@@ -87,7 +87,7 @@ insertC :: (Monad m, Inner u v, Ord d, VU.Unbox d, Fractional d) =>
            (RPT d () (V.Vector (Embed v d x))) 
 insertC maxDepth minLeaf n rvs = chunkedAccum n z (insert maxDepth minLeaf rvs)
   where
-    z = Tip mempty
+    z = Tip () mempty
 
 
 
@@ -161,7 +161,7 @@ insertMultiC :: (Monad m, Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector 
 insertMultiC maxd minl n rvss = chunkedAccum n im0 (insertMulti maxd minl rvss)
   where
     im0 = IM.map (const z) rvss
-    z = Tip mempty
+    z = Tip () mempty
 
 
 {-# SCC insertMulti #-}
@@ -187,7 +187,7 @@ insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
        -> RPT d () (V.Vector (Embed v d x))
 insert maxDepth minLeaf rvs = loop 0
   where
-    z = Tip mempty
+    z = Tip () mempty
     loop ixLev !tt xs =
       let
         r = rvs VG.! ixLev -- proj vector for current level
@@ -209,13 +209,13 @@ insert maxDepth minLeaf rvs = loop 0
                     tl = loop (ixLev + 1) tl0 ll
                     tr = loop (ixLev + 1) tr0 rr
 
-          Tip xs0 -> do
+          Tip _ xs0 -> do
             let xs' = xs <> xs0
             if ixLev >= maxDepth || length xs' <= minLeaf
-              then Tip xs' -- concat data in leaf
+              then Tip () xs' -- concat data in leaf
               else
               case partitionAtMedian r xs' of
-                Left ll -> Tip ll
+                Left ll -> Tip () ll
                 Right (thr, margin, ll, rr) -> Bin () thr margin tl tr
                   where
                     tl = loop (ixLev + 1) z ll

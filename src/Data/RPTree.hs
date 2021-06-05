@@ -215,7 +215,7 @@ candidates :: (Inner SVector v, VU.Unbox d, Ord d, Num d, Semigroup xs) =>
            -> xs
 candidates (RPTree rvs tt) x = go 0 tt
   where
-    go _     (Tip xs)                     = xs
+    go _     (Tip _ xs)                     = xs
     go ixLev (Bin _ thr margin ltree rtree) =
       let
         (mglo, mghi) = getMargin margin
@@ -240,7 +240,7 @@ candidatesPQ :: (Fractional d, Ord d, Inner SVector v, VU.Unbox d) =>
             -> PQ.IntPSQ d xs
 candidatesPQ (RPTree rvs tt) x = evalS $ go 0 tt PQ.empty (1/0)
   where
-    go _ (Tip xs) acc dprev =
+    go _ (Tip _ xs) acc dprev =
       insPQ dprev xs acc
     go ixLev (Bin _ thr margin ltree rtree) acc dprev = do
       let
