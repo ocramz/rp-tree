@@ -112,18 +112,25 @@ toDot name tt = BSB.toLazyByteString $ open <> x <> close
   where
     x = foldl insf mempty $ toEdges tt
       where
-        insf acc (Edge i1 i2) = acc <> BSB.string7 (unwords [show i1, "->", show i2, "\n"] )
-    open = BSB.string7 $ unwords ["digraph" , name, "{"]
+        insf acc = \case
+          (Edge i1 i2) -> acc <> BSB.string7 (unwords [show i1, "->", show i2, "\n"] )
+          Node i -> acc <> BSB.string7 (show i)
+    open = BSB.string7 $ unwords ["digraph" , name, "{\n"]
     close = BSB.string7 "}"
 
-data Edge = Edge Int Int deriving (Eq, Ord, Show)
+data Edge = Edge Int Int | Node Int deriving (Eq, Ord, Show)
 
 -- toDot :: RPT d Int a -> Stack Edge
 toEdges :: RPT d x a -> S.Set Edge
 toEdges = S.fromList . go [] [] . labelBranches
   where
     go s acc = \case
-      Tip i _ -> acc
+      -- Tip i _ -> acc
+      Tip i _ ->
+        let
+          acc' = maybe (Node i : acc) (\i0 -> push (Edge i0 i) acc) (pop s)
+        in
+          acc'
       Bin i _ _ tl tr ->
         let
           acc' = maybe acc (\i0 -> push (Edge i0 i) acc) (pop s)
