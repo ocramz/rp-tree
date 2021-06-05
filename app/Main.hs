@@ -31,7 +31,7 @@ import Data.RPTree (knn, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inn
 -- import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
-main = renderTree0
+main = csvTree0
 
 -- main :: IO ()
 -- main = do -- putStrLn "hello!"
@@ -63,7 +63,7 @@ embedC = C.map (\ x -> Embed x ())
 
 
 -- renderTree0 :: Int -> IO ()
-renderTree0 = do
+csvTree0 = do
   let
     n = 1000
     dim = 2
@@ -73,9 +73,9 @@ renderTree0 = do
     (RPCfg maxd minl _ chunk _) = rpTreeCfg n dim
     tt = tree0 n maxd minl chunk
     ttlab = flip evalState A $ traverse labeledV' tt
-  print tt -- lab
+  
   --   csvrows = flip evalState A $ traverse labeledV' tt
-  -- writeCsv "r/scatter_data_2.csv" csvrows
+  writeCsv "r/scatter_data_2.csv" ttlab
 
 
 

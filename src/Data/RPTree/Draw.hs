@@ -43,15 +43,10 @@ import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
 
 -- | Encode dataset as CSV and save into file
 writeCsv :: (Foldable t, VU.Unbox a, Show a, Show b) =>
-            FilePath
+            FilePath -- ^ path of output file
          -> t (V.Vector (DVector a, b)) -- ^ data point, label
          -> IO ()
 writeCsv fp ds = TL.writeFile fp $ TLB.toLazyText $ toCsvV ds
-
-
-toCsv :: (Foldable t, Show a, Show b, VU.Unbox a) =>
-         t (DVector a, b) -> TLB.Builder
-toCsv = foldMap (\(r, i) -> toCsvRow r i <> newline )
 
 toCsvV :: (Foldable t, VU.Unbox a, Show a, Show b) =>
           t (V.Vector (DVector a, b)) -> TLB.Builder
@@ -68,13 +63,15 @@ toCsvRow dv i = TLB.fromString $ intercalate "," [show x, show y, show i]
 newline :: TLB.Builder
 newline = TLB.fromString "\n"
 
-
+-- toCsv :: (Foldable t, Show a, Show b, VU.Unbox a) =>
+--          t (DVector a, b) -> TLB.Builder
+-- toCsv = foldMap (\(r, i) -> toCsvRow r i <> newline )
 
 
 -- | tree to graphviz dot format
 writeDot :: Ord t =>
             (t -> String) -- ^ how to render the node content
-         -> FilePath
+         -> FilePath -- ^ path of output file
          -> String -- ^ graph name
          -> RPTree d x t
          -> IO ()
