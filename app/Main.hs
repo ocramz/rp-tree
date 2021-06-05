@@ -73,27 +73,11 @@ csvTree0 = do
     (RPCfg maxd minl _ chunk _) = rpTreeCfg n dim
     tt = tree0 n maxd minl chunk
     ttlab = flip evalState A $ traverse labeledV' tt
-  
   --   csvrows = flip evalState A $ traverse labeledV' tt
   writeCsv "r/scatter_data_2.csv" ttlab
 
-
-
-labeled :: (Enum i) =>
-           [a] -> State i [(a, i)]
-labeled xs = do
-  i <- get
-  put (succ i)
-  let n = length xs
-  pure $ zip xs (replicate n i)
-
-
-labeledV :: Enum i => V.Vector a -> State i (V.Vector (a, i))
-labeledV xs = do
-  i <- get
-  put (succ i)
-  let n = length xs
-  pure $ V.zip xs (V.replicate n i)
+prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Pal5))
+prep = flip evalState A . traverse labeledV'
 
 labeledV' :: (Enum b) =>
              V.Vector (Embed v e a)
