@@ -1,7 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# language LambdaCase #-}
 {-# options_ghc -Wno-unused-imports #-}
-module Data.RPTree.Draw where
+module Data.RPTree.Draw (
+  -- * CSV
+  writeCsv
+  -- * GraphViz dot
+  , writeDot
+  -- , draw
+
+                        )where
 
 import Data.Bifoldable (Bifoldable(..))
 import Data.Bifunctor (Bifunctor(..))
@@ -18,6 +25,10 @@ import qualified Data.ByteString.Builder as BSB (Builder, toLazyByteString, stri
 import qualified Data.Set as S (Set, insert, fromList)
 -- mtl
 import Control.Monad.State (MonadState(..), modify)
+-- text
+import qualified Data.Text.Lazy as TL (Text)
+import qualified Data.Text.Lazy.Builder as TLB (Builder, toLazyText, fromString)
+import qualified Data.Text.Lazy.IO as TL (writeFile)
 -- transformers
 import Control.Monad.Trans.State (State, evalState)
 -- vector
@@ -31,33 +42,123 @@ import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
 
 
 -- | Encode dataset as CSV and save into file
--- writeCsv :: (Show a, Show b, VU.Unbox a) =>
---             FilePath
---          -> [(DVector a, b)] 
---          -> IO ()
 writeCsv :: (Foldable t, VU.Unbox a, Show a, Show b) =>
             FilePath
          -> t (V.Vector (DVector a, b)) -- ^ data point, label
          -> IO ()
-writeCsv fp ds = LBS.writeFile fp $ BSB.toLazyByteString $ toCsvV ds
+writeCsv fp ds = TL.writeFile fp $ TLB.toLazyText $ toCsvV ds
 
 
 toCsv :: (Foldable t, Show a, Show b, VU.Unbox a) =>
-         t (DVector a, b) -> BSB.Builder
-toCsv = foldMap (\(r, i) -> toCsvRow r i <> BSB.charUtf8 '\n' )
--- toCsv rs = mconcat [toCsvRow r i <> BSB.charUtf8 '\n' | (r, i) <- rs]
+         t (DVector a, b) -> TLB.Builder
+toCsv = foldMap (\(r, i) -> toCsvRow r i <> newline )
 
 toCsvV :: (Foldable t, VU.Unbox a, Show a, Show b) =>
-          t (V.Vector (DVector a, b)) -> BSB.Builder
-toCsvV = foldMap (\v -> foldMap (\(r, i) -> toCsvRow r i <> BSB.charUtf8 '\n' ) v)
+          t (V.Vector (DVector a, b)) -> TLB.Builder
+toCsvV = foldMap (\v -> foldMap (\(r, i) -> toCsvRow r i <> newline ) v)
 
 toCsvRow :: (Show a, Show b, VU.Unbox a) =>
             DVector a
          -> b
-         -> BSB.Builder
-toCsvRow dv i = BSB.string7 $ intercalate "," [show x, show y, show i]
+         -> TLB.Builder
+toCsvRow dv i = TLB.fromString $ intercalate "," [show x, show y, show i]
   where
     (x:y:_) = toListDv dv
+
+newline :: TLB.Builder
+newline = TLB.fromString "\n"
+
+
+
+
+-- | tree to graphviz dot format
+writeDot :: Ord t =>
+            (t -> String) -- ^ how to render the node content
+         -> FilePath
+         -> String -- ^ graph name
+         -> RPTree d x t
+         -> IO ()
+writeDot f fp name tt = TL.writeFile fp (toDot f name tt) 
+
+toDot :: Ord a => (a -> String) -> String -> RPTree d x a -> TL.Text
+toDot f name (RPTree _ tt) = TLB.toLazyText $ open <> x <> close
+  where
+    x = foldl insf mempty $ toEdges tt
+      where
+        insf acc = \case
+          Edge i1 i2 ->
+            acc <> TLB.fromString (unwords [show i1, "->", show i2]) <> newline
+          Node i xs -> acc <> TLB.fromString (unwords [show i, nlab ] ) <> newline
+            where
+              nlab = unwords ["[", "label=\"", f xs,"\"]"]
+          BNode i -> acc <> TLB.fromString (unwords [show i, blab]) <> newline
+            where
+              blab = unwords ["[", "shape=point", "]"]
+    open = TLB.fromString $ unwords ["digraph" , name, "{\n"]
+    close = TLB.fromString "}"
+
+data G a = Edge Int Int
+         | Node Int a -- tip nodes
+         | BNode Int -- branching point nodes
+         deriving (Eq, Ord, Show)
+
+
+toEdges :: (Ord a) => RPT d x a -> S.Set (G a)
+toEdges = S.fromList . go [] [] . labelBranches
+  where
+    go s acc = \case
+      Tip i1 x ->
+        let
+          n = Node i1 x
+          acc' = push n acc
+          acc'' = maybe acc' (\i0 -> push (Edge i0 i1) acc') (pop s)
+        in
+          acc''
+      Bin i1 _ _ tl tr ->
+        let
+          b1 = BNode i1
+          acc' = push b1 acc
+          acc'' = case pop s of
+            Nothing -> acc'
+            Just i0 ->
+              let
+                e = Edge i0 i1
+                b0 = BNode i0
+              in push e (push b0 acc')
+          s' = push i1 s
+        in
+          go s' acc'' tl <> go s' acc tr
+
+
+
+labelBranches :: Bitraversable t => t x d -> t Int d
+labelBranches = flip evalState 0 . bitraverse counter pure
+
+counter :: (MonadState Int m) => x -> m Int
+counter _ = do
+  i <- get
+  modify succ
+  pure i
+
+type Stack a = [a]
+push :: a -> Stack a -> Stack a
+push = (:)
+pop :: Stack a -> Maybe a
+pop xs
+  | null xs = Nothing
+  | otherwise = Just $ head xs
+
+
+-- tt0 :: RPT Integer () [a]
+tt0 = Bin [] 0 mempty tl t
+  where
+    tl = Bin [] 1 mempty (Bin [] 2 mempty t t) (Bin [] 3 mempty t t)
+    t = Tip [] []
+
+
+
+-- 
+
 
 -- | Render a tree to stdout
 --
@@ -102,64 +203,3 @@ byside l r = B.hcat B.top [l, r]
 
 stack :: B.Box -> B.Box -> B.Box
 stack t b = B.vcat B.center1 [t, b]
-
-
-
--- -- tree to graphviz dot format
-
-toDot :: String -> RPT d x a -> LBS.ByteString
-toDot name tt = BSB.toLazyByteString $ open <> x <> close
-  where
-    x = foldl insf mempty $ toEdges tt
-      where
-        insf acc = \case
-          (Edge i1 i2) -> acc <> BSB.string7 (unwords [show i1, "->", show i2, "\n"] )
-          Node i -> acc <> BSB.string7 (show i)
-    open = BSB.string7 $ unwords ["digraph" , name, "{\n"]
-    close = BSB.string7 "}"
-
-data Edge = Edge Int Int | Node Int deriving (Eq, Ord, Show)
-
--- toDot :: RPT d Int a -> Stack Edge
-toEdges :: RPT d x a -> S.Set Edge
-toEdges = S.fromList . go [] [] . labelBranches
-  where
-    go s acc = \case
-      -- Tip i _ -> acc
-      Tip i _ ->
-        let
-          acc' = maybe (Node i : acc) (\i0 -> push (Edge i0 i) acc) (pop s)
-        in
-          acc'
-      Bin i _ _ tl tr ->
-        let
-          acc' = maybe acc (\i0 -> push (Edge i0 i) acc) (pop s)
-          s' = push i s
-        in
-          go s' acc' tl <> go s' acc tr
-
-
-
-labelBranches :: Bitraversable t => t x d -> t Int d
-labelBranches = flip evalState 0 . bitraverse counter pure
-
-counter :: (MonadState Int m) => x -> m Int
-counter _ = do
-  i <- get
-  modify succ
-  pure i
-
-type Stack a = [a]
-push :: a -> Stack a -> Stack a
-push = (:)
-pop :: Stack a -> Maybe a
-pop xs
-  | null xs = Nothing
-  | otherwise = Just $ head xs
-
-
--- tt0 :: RPT Integer () [a]
-tt0 = Bin [] 0 mempty tl t
-  where
-    tl = Bin [] 1 mempty (Bin [] 2 mempty t t) (Bin [] 3 mempty t t)
-    t = Tip [] []

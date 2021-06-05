@@ -27,7 +27,7 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip, zipWith)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inner(..), RPTree, RPForest, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2, datS, datD, circle2d, treeSize, leafSizes)
+import Data.RPTree (knn, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inner(..), RPTree, RPForest, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2, datS, datD, circle2d, treeSize, leafSizes, writeDot)
 -- import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
@@ -121,6 +121,12 @@ instance Enum Pal5 where
     C -> 2
     D -> 3
     E -> 4
+
+tree0dot :: IO ()
+tree0dot = writeDot f fpath "tree0" $ tree0 10000 6 10 50
+  where
+    f = show . length
+    fpath = "tree0.dot"
 
 tree0 :: Int -- ^ dataset size
       -> Int -- ^ max tree depth
