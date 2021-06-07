@@ -36,8 +36,12 @@ main :: IO ()
 main = do
   let
     n = 10000
+    maxd = 5
+    minl = 10
+    chunk = 100
     dim = 2
-    cfg = rpTreeCfg n dim
+    -- cfg = rpTreeCfg n dim
+    cfg = RPCfg maxd minl 3 chunk 1.0
   csvTree0 n cfg
   tree0dot n cfg
 

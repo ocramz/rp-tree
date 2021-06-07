@@ -200,9 +200,7 @@ insert maxDepth minLeaf rvs = loop 0
               then b -- return current subtree
               else
               case partitionAtMedian' r xs of
-                Nothing -> Bin () thr0 margin0 tl tr0
-                  where
-                    tl = loop (ixLev + 1) tl0 mempty
+                Nothing -> Tip () mempty
                 Just (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
                   where
                     margin' = margin0 <> margin

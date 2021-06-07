@@ -423,7 +423,7 @@ partitionAtMedian' ::
   -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
   -> Maybe (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
 partitionAtMedian' r xs
-  | n < 2 = Nothing
+  | n < 1 = Nothing
   | otherwise = Just (thr, margin, ll, rr)
   where
     (ll, rr) = (VG.take nh xs', VG.drop nh xs')
@@ -436,7 +436,6 @@ partitionAtMedian' r xs
 
     n = VG.length xs -- total data size
     nh = n `div` 2
-    -- nc = 1 `max` nh
 
     projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
     (xs', inns) = VG.unzip projs
