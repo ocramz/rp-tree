@@ -1,13 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# language LambdaCase #-}
 {-# options_ghc -Wno-unused-imports #-}
+{-# options_ghc -Wno-unused-top-binds #-}
 module Data.RPTree.Draw (
   -- * CSV
   writeCsv
   -- * GraphViz dot
   , writeDot
   -- , draw
-
                         )where
 
 import Data.Bifoldable (Bifoldable(..))

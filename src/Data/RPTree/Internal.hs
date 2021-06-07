@@ -10,7 +10,7 @@
 {-# language LambdaCase #-}
 {-# language MultiParamTypeClasses #-}
 {-# language GeneralizedNewtypeDeriving #-}
--- {-# language TemplateHaskell #-}
+{-# language TemplateHaskell #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# options_ghc -Wno-unused-imports #-}
 module Data.RPTree.Internal where
@@ -37,6 +37,10 @@ import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 import qualified Data.IntMap.Strict as IM (IntMap, fromList)
 -- deepseq
 import Control.DeepSeq (NFData(..))
+-- microlens
+import Lens.Micro ((^..), Traversal', folded, Getting)
+-- microlens-th
+import Lens.Micro.TH (makeLensesFor)
 -- serialise
 import Codec.Serialise (Serialise(..), serialise, deserialiseOrFail)
 -- vector
@@ -135,13 +139,13 @@ toListDv (DV v) = VU.toList v
 -- one projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
 data RPT d l a =
   Bin {
-  _rpBranchLabel :: l
+  _rpLabel :: l
   , _rpThreshold ::  !d
   , _rpMargin :: {-# UNPACK #-} !(Margin d)
   , _rpL :: !(RPT d l a)
   , _rpR :: !(RPT d l a) }
   | Tip {
-      _rpTipLabel :: l
+      _rpLabel :: l
     , _rpData :: !a }
   deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 instance Bifunctor (RPT d) where
@@ -157,7 +161,7 @@ instance Bitraversable (RPT d) where
     Bin x thr mg tl tr -> Bin <$> f x <*> pure thr <*> pure mg <*> bitraverse f g tl <*> bitraverse f g tr
     Tip x y -> Tip <$> f x <*> g y
 instance (Serialise a, Serialise l, Serialise d) => Serialise (RPT d l a)
--- makeLensesFor [("_rpData", "rpData")] ''RPT
+makeLensesFor [("_rpData", "rpData"), ("_rpLabel", "rpLabel")] ''RPT
 instance (NFData v, NFData l, NFData a) => NFData (RPT v l a)
 
 -- | Random projection trees
@@ -172,7 +176,7 @@ data RPTree d l a = RPTree {
   , _rpTree :: !(RPT d l a)
                          } deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 instance (Serialise d, Serialise l, Serialise a, VU.Unbox d) => Serialise (RPTree d l a)
--- makeLensesFor [("_rpTree", "rpTree")] ''RPTree
+makeLensesFor [("_rpTree", "rpTree")] ''RPTree
 instance (NFData a, NFData l, NFData d) => NFData (RPTree d l a)
 
 -- | A random projection forest is an ordered set of 'RPTree's
@@ -194,12 +198,12 @@ deserialiseRPForest bss = case deserialiseOrFail `traverse` bss of
   Left e -> Left (show e)
   Right xs -> Right $ IM.fromList $ zip [0 ..] xs
 
--- rpTreeData :: Traversal' (RPTree d a) a
--- rpTreeData = rpTree . rpData
+rpTreeData :: Traversal' (RPTree d l a) a
+rpTreeData = rpTree . rpData
 
--- -- | All data buckets stored at the leaves of the tree
--- leaves :: RPTree d a -> [a]
--- leaves = (^.. rpTreeData)
+-- | All data buckets stored at the leaves of the tree
+leaves :: RPTree d l a -> [a]
+leaves = (^.. rpTreeData)
 
 -- | Number of tree levels
 levels :: RPTree d l a -> Int
