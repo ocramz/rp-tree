@@ -147,6 +147,7 @@ pop xs
 
 
 -- tt0 :: RPT Integer () [a]
+tt0 :: RPT Integer [a1] [a2]
 tt0 = Bin [] 0 mempty tl t
   where
     tl = Bin [] 1 mempty (Bin [] 2 mempty t t) (Bin [] 3 mempty t t)

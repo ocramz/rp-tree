@@ -7,6 +7,7 @@ import Control.Monad (replicateM)
 import Data.Bitraversable (Bitraversable(..))
 import Data.Foldable (fold, toList)
 import Data.Functor (void)
+import GHC.Stack (HasCallStack)
 
 -- conduit
 import qualified Data.Conduit as C (ConduitT, runConduit, yield, await, transPipe)
@@ -56,8 +57,8 @@ csvTree0 n (RPCfg maxd minl _ chunk _) = do
     ttlab = prep tt
   writeCsv "r/scatter_data_2.csv" ttlab
 
-prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Int))
-prep = flip evalState 0 . traverse labeled
+prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Pal5))
+prep = flip evalState A . traverse labeled
 
 labeled :: (Enum b) =>
              V.Vector (Embed v e a)

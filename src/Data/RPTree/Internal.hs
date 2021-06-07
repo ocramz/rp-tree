@@ -30,6 +30,7 @@ import Data.Ord (comparing)
 import Data.Semigroup (Min(..), Max(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 
 -- bytestring
 import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
@@ -404,11 +405,10 @@ partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
                   -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
                   -> Either (VE v a x) (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
 partitionAtMedian r xs
-  | n < 3 = Left xs
+  | n < 3 = Left xs'
   | otherwise = Right (thr, margin, ll, rr)
   where
     (ll, rr) = (VG.take nh xs', VG.drop nh xs')
-    -- (pjl, pjr) = (VG.head inns, VG.last inns) -- (min, max) inner product values
     (mgl, mgr) = (inns VG.! (nh - 1), inns VG.! (nh + 1))
     margin = Margin (Max mgl) (Min mgr)
     thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
@@ -417,13 +417,36 @@ partitionAtMedian r xs
     projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
     (xs', inns) = VG.unzip projs
 
+partitionAtMedian' ::
+  (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
+  u a -- ^ projection vector
+  -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
+  -> Maybe (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
+partitionAtMedian' r xs
+  | n < 2 = Nothing
+  | otherwise = Just (thr, margin, ll, rr)
+  where
+    (ll, rr) = (VG.take nh xs', VG.drop nh xs')
+    (mgl, mgr)
+      | n >= 3 = (inns VG.! (nh - 1), inns VG.! (nh + 1))
+      | n == 2 = (inns VG.! 0, inns VG.! 1)
+      | otherwise = let z = inns VG.! 0 in (z, z) -- assuming at least 1 element
+    margin = Margin (Max mgl) (Min mgr)
+    thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
+
+    n = VG.length xs -- total data size
+    nh = n `div` 2
+    -- nc = 1 `max` nh
+
+    projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
+    (xs', inns) = VG.unzip projs
+
+
 sortByVG :: (VG.Vector v a, Ord b) => (a -> b) -> v a -> v a
 sortByVG f v = runST $ do
   vm <- VG.thaw v
   V.sortBy (comparing f) vm
   VG.freeze vm
-
-
 
 
 
