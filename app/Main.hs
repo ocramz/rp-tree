@@ -35,10 +35,10 @@ import Data.RPTree (knn, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inn
 main :: IO ()
 main = do
   let
-    n = 10000
+    n = 30000
     maxd = 5
     minl = 10
-    chunk = 100
+    chunk = 500
     dim = 2
     -- cfg = rpTreeCfg n dim
     cfg = RPCfg maxd minl 3 chunk 1.0
@@ -61,7 +61,7 @@ csvTree0 n (RPCfg maxd minl _ chunk _) = do
     ttlab = prep tt
   writeCsv "r/scatter_data_2.csv" ttlab
 
-prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Pal5))
+prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Pal))
 prep = flip evalState A . traverse labeled
 
 labeled :: (Enum b) =>
@@ -75,8 +75,9 @@ labeled xs = do
     f (Embed x _) ii = (x, ii)
   pure $ V.zipWith f xs (V.replicate n i)
 
-data Pal5 = A | B | C | D | E deriving (Eq, Show)
-instance Enum Pal5 where
+-- color palette
+data Pal = A | B | C | D | E deriving (Eq, Show)
+instance Enum Pal where
   toEnum = \case
     0 -> A
     1 -> B
