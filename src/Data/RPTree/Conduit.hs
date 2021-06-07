@@ -40,7 +40,7 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, partitionAtMedian', RPTError(..), Embed(..))
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..), Embed(..))
 
 
 liftC :: (Monad m, MonadTrans t) => C.ConduitT i o m r -> C.ConduitT i o (t m) r
@@ -199,7 +199,7 @@ insert maxDepth minLeaf rvs = loop 0
             if ixLev >= maxDepth
               then b -- return current subtree
               else
-              case partitionAtMedian' r xs of
+              case partitionAtMedian r xs of
                 Nothing -> Tip () mempty
                 Just (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
                   where
@@ -213,46 +213,14 @@ insert maxDepth minLeaf rvs = loop 0
             if ixLev >= maxDepth || length xs' <= minLeaf
               then Tip () xs' -- concat data in leaf
               else
-              case partitionAtMedian' r xs' of
+              case partitionAtMedian r xs' of
                 Nothing -> Tip () mempty
                 Just (thr, margin, ll, rr) -> Bin () thr margin tl tr
                   where
                     tl = loop (ixLev + 1) z ll
                     tr = loop (ixLev + 1) z rr
 
--- insert maxDepth minLeaf rvs = loop 0
---   where
---     z = Tip () mempty
---     loop ixLev !tt xs =
---       let
---         r = rvs VG.! ixLev -- proj vector for current level
---       in
---         case tt of
---           b@(Bin _ thr0 margin0 tl0 tr0) ->
---             if ixLev >= maxDepth
---               then b -- return current subtree
---               else
---               case partitionAtMedian r xs of
---                 Left ll -> Bin () thr0 margin0 tl tr0
---                   where
---                     tl = loop (ixLev + 1) tl0 ll
---                 Right (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
---                   where
---                     margin' = margin0 <> margin
---                     thr' = (thr0 + thr) / 2
---                     tl = loop (ixLev + 1) tl0 ll
---                     tr = loop (ixLev + 1) tr0 rr
---           Tip _ xs0 -> do
---             let xs' = xs <> xs0
---             if ixLev >= maxDepth || length xs' <= minLeaf
---               then Tip () xs' -- concat data in leaf
---               else
---               case partitionAtMedian r xs' of
---                 Left ll -> Tip () ll
---                 Right (thr, margin, ll, rr) -> Bin () thr margin tl tr
---                   where
---                     tl = loop (ixLev + 1) z ll
---                     tr = loop (ixLev + 1) z rr
+
 
 
 -- | Aggregate the input stream in chunks of a given size (semantics of 'C.chunksOf'), and fold over the resulting stream building up an accumulator structure (e.g. a tree)

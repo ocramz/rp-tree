@@ -56,7 +56,7 @@ module Data.RPTree (
   -- , ForestParams
   -- * Query
   , knn
-  , knnPQ
+  -- , knnPQ
   -- * I/O
   , serialiseRPForest
   , deserialiseRPForest
@@ -71,13 +71,15 @@ module Data.RPTree (
   , Embed(..)
   -- ** RPTree
   , RPTree, RPForest
-  -- *
+  -- * Vector types
+  -- ** Sparse
   , SVector, fromListSv, fromVectorSv
+  -- ** Dense
   , DVector, fromListDv, fromVectorDv
-  -- * Vector space types
+  -- * Vector space typeclasses
   , Inner(..), Scale(..)
-    -- ** helpers for implementing Inner instances
-    -- *** inner product
+    -- ** Helpers for implementing 'Inner' instances
+    -- *** Inner product
   , innerSS, innerSD, innerDD
     -- *** L2 distance
   , metricSSL2, metricSDL2
@@ -86,9 +88,9 @@ module Data.RPTree (
 
   -- * Rendering
   -- , draw
-  -- * CSV
+  -- ** CSV
   , writeCsv
-  -- * GraphViz dot
+  -- ** GraphViz dot
   , writeDot
   -- * Testing
   , BenchConfig(..), normalSparse2

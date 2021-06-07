@@ -167,11 +167,11 @@ instance (NFData v, NFData l, NFData a) => NFData (RPT v l a)
 
 -- | Random projection trees
 --
--- The first type parameter corresponds to a floating point scalar value, the second is the type of the data collected at the leaves of the tree (e.g. lists of vectors)
+-- The first type parameter corresponds to a floating point scalar value, the second labels every tree part (e.g. for visual rendering) and the third is the type of the data collected at the leaves of the tree (e.g. lists of vectors).
 --
--- We keep them separate to leverage the Functor instance for postprocessing and visualization
+-- We keep them separate to leverage the (Bi-)Functor instance for postprocessing and visualization.
 --
--- One projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf )
+-- This implementation uses one projection vector per tree level (as suggested in https://www.cs.helsinki.fi/u/ttonteri/pub/bigdata2016.pdf ).
 data RPTree d l a = RPTree {
   _rpVectors :: V.Vector (SVector d) -- ^ one random projection vector per tree level
   , _rpTree :: !(RPT d l a)
@@ -400,29 +400,12 @@ type VE v a x = V.Vector (Embed v a x)
 
 {-# SCC partitionAtMedian #-}
 -- | Partition the data wrt the median value of the inner product
-partitionAtMedian :: (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
-                     u a -- ^ projection vector
-                  -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
-                  -> Either (VE v a x) (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
-partitionAtMedian r xs
-  | n < 3 = Left xs'
-  | otherwise = Right (thr, margin, ll, rr)
-  where
-    (ll, rr) = (VG.take nh xs', VG.drop nh xs')
-    (mgl, mgr) = (inns VG.! (nh - 1), inns VG.! (nh + 1))
-    margin = Margin (Max mgl) (Min mgr)
-    thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
-    n = VG.length xs -- total data size
-    nh = n `div` 2 -- size of left partition
-    projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
-    (xs', inns) = VG.unzip projs
-
-partitionAtMedian' ::
+partitionAtMedian ::
   (Ord a, Inner u v, VU.Unbox a, Fractional a) =>
   u a -- ^ projection vector
   -> V.Vector (Embed v a x) -- ^ dataset (3 or more elements)
   -> Maybe (a, Margin a, VE v a x, VE v a x) -- ^ median, margin, smaller, larger
-partitionAtMedian' r xs
+partitionAtMedian r xs
   | n < 1 = Nothing
   | otherwise = Just (thr, margin, ll, rr)
   where
@@ -433,10 +416,8 @@ partitionAtMedian' r xs
       | otherwise = let z = inns VG.! 0 in (z, z) -- assuming at least 1 element
     margin = Margin (Max mgl) (Min mgr)
     thr = inns VG.! nh -- inner product threshold,  mgl < thr < mgr
-
     n = VG.length xs -- total data size
-    nh = n `div` 2
-
+    nh = n `div` 2 -- size of left partition
     projs = sortByVG snd $ VG.map (\xe -> (xe, r `inner` (eEmbed xe))) xs
     (xs', inns) = VG.unzip projs
 
