@@ -122,25 +122,20 @@ forest seed maxd minl ntrees chunksize pnz dim src = do
 
 data RPTreeConfig = RPCfg {
   fpMaxTreeDepth :: Int -- ^ max tree depth \(l > 1\) 
-  , fpMinLeafSize :: Int -- ^ min leaf size 
-  , fpNumTrees :: Int -- ^ number of trees \(n_t > 1\)
+  -- , fpMinLeafSize :: Int -- ^ min leaf size 
   , fpDataChunkSize :: Int -- ^ data chunk size
   , fpProjNzDensity :: Double -- ^ nonzero density of projection vectors \(p_{nz} \in (0, 1)\)
                           } deriving (Show)
 
-defaultParams :: RPTreeConfig
-defaultParams = RPCfg 5 10 3 100 0.5
 
--- | Configure the rp-tree forest construction process with some natural defaults
-rpTreeCfg :: Integral a =>
-             a -- ^ data size
-          -> Int -- ^ vector dimension
+-- | Configure the rp-tree tree construction process with some natural defaults
+rpTreeCfg :: Int -- ^ min leaf size
+          -> Int -- ^ number of points in the dataset
+          -> Int -- ^ vector dimension of the data points
           -> RPTreeConfig
-rpTreeCfg n d = RPCfg maxd minl ntree nchunk pnz
+rpTreeCfg minl n d = RPCfg maxd nchunk pnz
   where
-    minl = 10
     maxd = ceiling $ logBase 2 (fromIntegral n / fromIntegral minl)
-    ntree = 3
     nchunk = ceiling $ fromIntegral n / 100
     pnzMin = 1 / logBase 10 (fromIntegral d)
     pnz = pnzMin `min` 1.0

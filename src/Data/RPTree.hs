@@ -158,11 +158,13 @@ knn :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
     -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
     -> v d -- ^ query point
     -> V.Vector (p, Embed u d x) -- ^ ordered in increasing distance order to the query point
-knn distf k tts q = sortByVG fst cs
+knn distf k tts q = VG.take k $ sortByVG fst cs
   where
-    cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ VG.take k $ fold $ (`candidates` q) <$> tts
+    cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ fold $ (`candidates` q) <$> tts
 
--- | Same as 'knn' but with a (hopefully) faster implementation
+-- | Same as 'knn' but accumulating the result in low margin order (following the intuition in 'annoy').
+--
+-- FIXME to be verified
 knnPQ :: (Ord p, Inner SVector v, VU.Unbox d, RealFrac d) =>
          (u d -> v d -> p) -- ^ distance function
       -> Int -- ^ k neighbors
@@ -177,13 +179,21 @@ knnPQ distf k tts q = sortByVG fst cs
     n = length tts
 
 
--- | average recall-at-k, computed over a set of trees
-recallWith :: (Inner SVector v, VU.Unbox d, Fractional a1, Ord d, Ord a2, Ord x, Ord (u d), Num d) =>
-              (u d -> v d -> a2)
+-- | Average recall-at-k, computed over a set of trees
+-- 
+-- The supplied distance function @d@ must satisfy the definition of a metric, i.e.
+--
+-- * identity of indiscernible elements : \( d(x, y) = 0 \leftrightarrow x \equiv y \)
+--
+-- * symmetry : \(  d(x, y) = d(y, x)  \)
+--
+-- * triangle inequality : \( d(x, y) + d(y, z) \geq d(x, z) \)
+recallWith :: (Inner SVector v, VU.Unbox d, Fractional b, Ord d, Ord a, Ord x, Ord (u d), Num d) =>
+              (u d -> v d -> a) -- ^ distance function
            -> RPForest d (V.Vector (Embed u d x))
            -> Int -- ^ k : number of nearest neighbors to consider
            -> v d -- ^ query point
-           -> a1
+           -> b
 recallWith distf tt k q = sum rs / fromIntegral n
   where
     rs = fmap (\t -> recallWith1 distf t k q) tt
@@ -197,11 +207,11 @@ recallWith1 :: (Inner SVector v, Ord d, VU.Unbox d, Fractional p, Ord a, Ord x, 
            -> p
 recallWith1 distf tt k q = fromIntegral (length aintk) / fromIntegral k
   where
-    xs = points tt
-    dists = sortBy (comparing snd) $ toList $ fmap (\x -> (x, eEmbed x `distf` q)) xs
-    kk = S.fromList $ map fst $ take k dists -- first k nn's
-    aa = set $ candidates tt q
     aintk = aa `S.intersection` kk
+    aa = set $ candidates tt q
+    kk = S.fromList $ map fst $ take k dists -- first k nn's
+    dists = sortBy (comparing snd) $ toList $ fmap (\x -> (x, eEmbed x `distf` q)) xs
+    xs = points tt
 
 set :: (Foldable t, Ord a) => t a -> S.Set a
 set = foldl (flip S.insert) mempty

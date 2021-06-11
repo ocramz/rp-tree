@@ -41,21 +41,21 @@ main = do
     chunk = 500
     dim = 2
     -- cfg = rpTreeCfg n dim
-    cfg = RPCfg maxd minl 3 chunk 1.0
-  csvTree0 n cfg
-  tree0dot n cfg
+    cfg = RPCfg maxd chunk 1.0
+  csvTree0 n minl cfg
+  tree0dot n minl cfg
 
 
 
-tree0dot :: Int -> RPTreeConfig -> IO ()
-tree0dot n (RPCfg maxd minl _ chunk _) =
+tree0dot :: Int -> Int -> RPTreeConfig -> IO ()
+tree0dot n minl (RPCfg maxd chunk _) =
   writeDot f fpath "tree0" $ tree0 n maxd minl chunk
   where
     f = show . length
     fpath = "tree0.dot"
 
-csvTree0 :: Int -> RPTreeConfig -> IO ()
-csvTree0 n (RPCfg maxd minl _ chunk _) = do
+csvTree0 :: Int -> Int -> RPTreeConfig -> IO ()
+csvTree0 n minl (RPCfg maxd chunk _) = do
   let
     tt = tree0 n maxd minl chunk
     ttlab = prep tt

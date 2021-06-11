@@ -1,3 +1,7 @@
+0.5
+
+- fixed intermittent bug in 'knn', originally due to messing up the order of 'take' and 'sort'.
+
 0.4
 
 - add function to compute the forest construction parameters from the dataset dimensions (rpTreeCfg)
