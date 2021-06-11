@@ -1,3 +1,7 @@
+0.5.1
+
+- no need for 'microlens' and 'hspec' in the library
+
 0.5
 
 - fixed intermittent bug in 'knn', originally due to messing up the order of 'take' and 'sort'.
