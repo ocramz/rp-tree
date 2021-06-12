@@ -5,6 +5,7 @@
 module Data.RPTree.Draw (
   -- * CSV
   writeCsv
+  , knnWriteCsv
   -- * GraphViz dot
   , writeDot
   -- , draw
@@ -39,7 +40,16 @@ import qualified Data.Vector.Unboxed as VU (Unbox)
 import Data.RPTree.Internal (RPTree(..), RPT(..), DVector, toListDv)
 
 
-
+knnWriteCsv ::
+  (Foldable t1, Foldable t2, Show a1, Show b1, Show a2, Show b2, VU.Unbox a1, VU.Unbox a2) =>
+  FilePath
+  -> t1 (V.Vector (DVector a1, b1))
+  -> t2 (DVector a2, b2) -- ^ points obtained from knn
+  -> IO ()
+knnWriteCsv fp ds knnds = TL.writeFile fp $ TLB.toLazyText bld
+  where
+    bld = toCsvV ds <>
+          toCsv knnds
 
 -- | Encode dataset as CSV and save into file
 writeCsv :: (Foldable t, VU.Unbox a, Show a, Show b) =>
@@ -50,7 +60,10 @@ writeCsv fp ds = TL.writeFile fp $ TLB.toLazyText $ toCsvV ds
 
 toCsvV :: (Foldable t, VU.Unbox a, Show a, Show b) =>
           t (V.Vector (DVector a, b)) -> TLB.Builder
-toCsvV = foldMap (\v -> foldMap (\(r, i) -> toCsvRow r i <> newline ) v)
+toCsvV = foldMap toCsv
+
+toCsv :: (Foldable t, Show a, Show b, VU.Unbox a) => t (DVector a, b) -> TLB.Builder
+toCsv = foldMap (\(r, i) -> toCsvRow r i <> newline)
 
 toCsvRow :: (Show a, Show b, VU.Unbox a) =>
             DVector a
@@ -75,7 +88,7 @@ writeDot :: Ord t =>
          -> String -- ^ graph name
          -> RPTree d x t
          -> IO ()
-writeDot f fp name tt = TL.writeFile fp (toDot f name tt) 
+writeDot f fp name tt = TL.writeFile fp (toDot f name tt)
 
 toDot :: Ord a => (a -> String) -> String -> RPTree d x a -> TL.Text
 toDot f name (RPTree _ tt) = TLB.toLazyText $ open <> x <> close

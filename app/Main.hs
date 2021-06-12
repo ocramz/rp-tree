@@ -15,7 +15,7 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, scanl, scanlM, last, print, sinkVector, sinkList)
 import qualified Data.Conduit.List as C (chunksOf, unfold, unfoldM)
 -- containers
-import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey)
+import qualified Data.IntMap as IM (IntMap, fromList, insert, lookup, map, mapWithKey, traverseWithKey, foldlWithKey, foldrWithKey, singleton)
 -- -- exceptions
 -- import Control.Monad.Catch (MonadThrow(..))
 -- -- mnist-idx-conduit
@@ -27,42 +27,66 @@ import Control.Monad.Trans.State.Strict (State, get, put, evalState)
 import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip, zipWith)
+import qualified Data.Vector.Unboxed as VU (Unbox)
 
 import Control.Monad (replicateM)
-import Data.RPTree (knn, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inner(..), RPTree, RPForest, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, tree, forest, dataSource, sparse, normal2, normalSparse2, datS, datD, circle2d, leaves, levels, treeSize, leafSizes, writeDot)
+import Data.RPTree (knn, knnH, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inner(..), RPTree, RPForest, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, knnWriteCsv, tree, forest, dataSource, sparse, normal2, normalSparse2, datS, datD, circle2d, leaves, levels, treeSize, leafSizes, writeDot)
 -- import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
 main = do
   let
     n = 30000
-    maxd = 5
     minl = 10
-    chunk = 500
     dim = 2
     -- cfg = rpTreeCfg n dim
-    cfg = RPCfg maxd chunk 1.0
-  csvTree0 n minl cfg
-  tree0dot n minl cfg
+    (RPCfg maxd chunk _) = rpTreeCfg minl n dim
+    tt = tree0 n maxd minl chunk
+  csvTree0 tt
+  tree0dot tt
+  csvKnnTree0 tt
 
+csvKnnTree0 :: (Show a1, VU.Unbox a1, RealFloat a1) =>
+               RPTree a1 () (V.Vector (Embed DVector a1 a)) -> IO ()
+csvKnnTree0 tt = do
+  let
+    ttlab = prep 0 tt -- label leaves starting from 0
+    q = fromListDv [0, 1] -- query
+    tts = IM.singleton 0 tt
+    k = 10
+    labf v = (v, (- 1)) -- labelling function for KNN points
+    hits = labf <$> knnL2 k tts q
+    hitsH = labf <$> knnHL2 k tts q
+  knnWriteCsv "r/scatter_knn.csv" ttlab hits
+  knnWriteCsv "r/scatter_knnH.csv" ttlab hitsH
 
+knnL2, knnHL2 :: (VU.Unbox p, RealFloat p, Inner SVector v, Inner u v) =>
+                 Int
+              -> RPForest p (V.Vector (Embed u p x))
+              -> v p
+              -> V.Vector (u p)
+knnL2 n ff q = eEmbed . snd <$> knn metricL2 n ff q
+knnHL2 n ff q = eEmbed . snd <$> knnH metricL2 n ff q
 
-tree0dot :: Int -> Int -> RPTreeConfig -> IO ()
-tree0dot n minl (RPCfg maxd chunk _) =
-  writeDot f fpath "tree0" $ tree0 n maxd minl chunk
+-- render the tree with graphviz
+tree0dot :: (Ord (t a), Foldable t) => RPTree d x (t a) -> IO ()
+tree0dot tt  =
+  writeDot f fpath "tree0" tt
   where
     f = show . length
     fpath = "tree0.dot"
 
-csvTree0 :: Int -> Int -> RPTreeConfig -> IO ()
-csvTree0 n minl (RPCfg maxd chunk _) = do
+-- scatter the whole dataset with distinct colors for the contents of each leaf
+csvTree0 :: (VU.Unbox a1, Show a1, Traversable t) =>
+            t (V.Vector (Embed DVector a1 a2)) -> IO ()
+csvTree0 tt = do
   let
-    tt = tree0 n maxd minl chunk
-    ttlab = prep tt
+    ttlab = prep A tt
   writeCsv "r/scatter_data_2.csv" ttlab
 
-prep :: (Traversable t) => t (V.Vector (Embed v e a)) -> t (V.Vector (v e, Pal))
-prep = flip evalState A . traverse labeled
+prep :: (Traversable t, Enum s) =>
+        s -> t (V.Vector (Embed v e a)) -> t (V.Vector (v e, s))
+prep x0 = flip evalState x0 . traverse labeled
 
 labeled :: (Enum b) =>
              V.Vector (Embed v e a)

@@ -12,7 +12,7 @@ import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, f
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, runIO)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, knnPQ, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d)
+import Data.RPTree (forest, knn, knnH, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d )
 
 spec :: Spec
 spec = do
@@ -66,12 +66,12 @@ spec = do
         dists = map fst $ toList hits
       print hits
       maximum dists `shouldSatisfy` (< 1)
-    -- it "knnPQ : results should be close to the query (rpTreeCfg params)" $ do
-    --   let
-    --     hits = knnPQ metricL2 k tts q
-    --     dists = map fst $ toList hits
-    --   print hits
-    --   maximum dists `shouldSatisfy` (< 1)
+    it "knnH : results should be close to the query (rpTreeCfg params)" $ do
+      let
+        hits = knnH metricL2 k tts q
+        dists = map fst $ toList hits
+      print hits
+      maximum dists `shouldSatisfy` (< 1)
 
 
 -- test data

@@ -56,7 +56,7 @@ module Data.RPTree (
   -- , ForestParams
   -- * Query
   , knn
-  , knnPQ
+  , knnH
   -- * I/O
   , serialiseRPForest
   , deserialiseRPForest
@@ -89,7 +89,7 @@ module Data.RPTree (
   -- * Rendering
   -- , draw
   -- ** CSV
-  , writeCsv
+  , writeCsv, knnWriteCsv
   -- ** GraphViz dot
   , writeDot
   -- * Testing
@@ -125,7 +125,7 @@ import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- heaps
-import qualified Data.Heap as H (Heap, fromList, insert, Entry(..), empty, group, viewMin, map)
+import qualified Data.Heap as H (Heap, fromList, insert, Entry(..), empty, group, viewMin, map, union)
 -- -- psqueues
 -- import qualified Data.IntPSQ as PQ (IntPSQ, findMin, minView, empty, insert, fromList, toList)
 -- transformers
@@ -143,7 +143,9 @@ import Data.RPTree.Conduit (tree, forest, dataSource, liftC, rpTreeCfg, RPTreeCo
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2, circle2d)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), leaves, levels, points, Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)
 import Data.RPTree.Internal.Testing (BenchConfig(..), randSeed, datS, datD)
-import Data.RPTree.Draw (writeDot, writeCsv)
+import Data.RPTree.Draw (writeDot, writeCsv, knnWriteCsv)
+
+
 
 
 -- | Look up the \(k\) nearest neighbors to a query point
@@ -178,9 +180,37 @@ knnPQ distf k tts q = VG.fromList $ take k $ map (\(H.Entry p x) -> (p , x)) $ n
   where
     xs = fold $ (`candidates` q) <$> tts
     h = VG.foldl insf H.empty xs
-    insf acc x = H.insert (H.Entry p x) acc
       where
-        p = eEmbed x `distf` q
+        insf acc x = H.insert (H.Entry p x) acc
+          where
+            p = eEmbed x `distf` q
+
+-- | Same as 'knn' but based on min-'H.Heap'
+--
+-- Leaves are prioritized according to their margin
+knnH :: (Ord p, Inner SVector v, VU.Unbox d, Fractional d, Ord d) =>
+         (u d -> v d -> p) -- ^ distance function
+      -> Int -- ^ k neighbors
+      -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
+      -> v d -- ^ query point
+      -> V.Vector (p, Embed u d x) -- ^ ordered in increasing distance order to the query point
+knnH distf k tts q = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ go mempty 0 htot
+  where
+    htot = unions $ (`candidatesH` q) <$> tts
+    go acc n hh = case H.viewMin hh of
+          Nothing -> acc
+          Just ((H.Entry _ xsh), hrest) ->
+            let
+              nels = length xsh
+              ntot = nels + n
+            in
+              if ntot > k && not (null acc)
+              then acc
+              else go (xsh <> acc) ntot hrest
+
+
+unions :: Foldable t => t (H.Heap a) -> H.Heap a
+unions = foldl H.union H.empty
 
 -- | deduplicate
 nub :: (Ord a) => H.Heap a -> [a]
@@ -276,7 +306,80 @@ candidates (RPTree rvs tt) x = go 0 tt
            | otherwise   -> go i' rtree
 
 
+-- | RPTree margins used as search priority (using a min-heaps : lower margin leaves will be ranked highest and therefore searched first)
+candidatesH :: (Inner SVector v, VU.Unbox d, Ord d, Fractional d) =>
+               RPTree d l a
+            -> v d -- ^ query point
+            -> H.Heap (H.Entry d a)
+candidatesH (RPTree rvs tt) x = go 0 tt H.empty infty
+  where
+    infty = 1 / 0
+    go _ (Tip _ xs) acc p = insertp p xs acc
+    go ixLev (Bin _ thr margin ltree rtree) acc p =
+      let
+        (mglo, mghi) = getMargin margin
+        r = rvs VG.! ixLev
+        proj = r `inner` x
+        i' = succ ixLev
+        dl = abs (mglo - proj) -- left margin
+        dr = abs (mghi - proj) -- right margin
+        pl = p `min` dl
+        pr = p `min` dr
+      in if
+        | proj < thr &&
+          dl > dr -> H.union (go i' ltree acc pl) (go i' rtree acc pr)
+        | proj < thr  -> go i' ltree acc pl
+        | proj > thr &&
+          dl < dr -> H.union (go i' ltree acc pl) (go i' rtree acc pr)
+        | otherwise -> go i' rtree acc pr
 
+insertp :: Ord p =>
+           p -> a -> H.Heap (H.Entry p a) -> H.Heap (H.Entry p a)
+insertp p x = H.insert (H.Entry p x)
+
+
+
+
+data RPTreeStats = RPTreeStats {
+  rptsLength :: Int
+                               } deriving (Eq, Show)
+
+treeStats :: RPTree d l a -> RPTreeStats
+treeStats (RPTree _ tt) = RPTreeStats l
+  where
+    l = length tt
+
+
+-- | How many data items are stored in the 'RPTree'
+treeSize :: (Foldable t) => RPTree d l (t a) -> Int
+treeSize = sum . leafSizes
+
+-- | How many data items are stored in each leaf of the 'RPTree'
+leafSizes :: Foldable t => RPTree d l (t a) -> RPT d l Int
+leafSizes (RPTree _ tt) = length <$> tt
+
+
+
+-- candidatesPQ :: (Ord a, Ord d, Inner SVector v, VU.Unbox d, Num d) =>
+--                 RPTree d l a -> v d -> H.Heap a
+-- candidatesPQ (RPTree rvs tt) x = go 0 tt H.empty
+--   where
+--     go _ (Tip _ xs) acc = H.insert xs acc
+--     go ixLev (Bin _ thr margin ltree rtree) acc =
+--       let
+--         (mglo, mghi) = getMargin margin
+--         r = rvs VG.! ixLev
+--         proj = r `inner` x
+--         i' = succ ixLev
+--         dl = abs (mglo - proj) -- left margin
+--         dr = abs (mghi - proj) -- right margin
+--       in if
+--         | proj < thr &&
+--           dl > dr -> H.union (go i' ltree acc) (go i' rtree acc)
+--         | proj < thr  -> go i' ltree acc
+--         | proj > thr &&
+--           dl < dr -> H.union (go i' ltree acc) (go i' rtree acc)
+--         | otherwise -> go i' rtree acc
 
 
 -- -- | like 'candidates' but outputs an ordered 'IntPQ' where the margin to the median projection is interpreted as queue priority
@@ -340,23 +443,7 @@ candidates (RPTree rvs tt) x = go 0 tt
 
 
 
-data RPTreeStats = RPTreeStats {
-  rptsLength :: Int
-                               } deriving (Eq, Show)
 
-treeStats :: RPTree d l a -> RPTreeStats
-treeStats (RPTree _ tt) = RPTreeStats l
-  where
-    l = length tt
-
-
--- | How many data items are stored in the 'RPTree'
-treeSize :: (Foldable t) => RPTree d l (t a) -> Int
-treeSize = sum . leafSizes
-
--- | How many data items are stored in each leaf of the 'RPTree'
-leafSizes :: Foldable t => RPTree d l (t a) -> RPT d l Int
-leafSizes (RPTree _ tt) = length <$> tt 
 
 -- pqSeq :: Ord a => PQ.IntPSQ a b -> Seq (a, b)
 -- pqSeq pqq = go pqq mempty
