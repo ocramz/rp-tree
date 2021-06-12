@@ -1,3 +1,7 @@
+0.6
+
+- add 'knnPQ' based on 'heaps', to be confirmed how efficient it is
+
 0.5.1
 
 - no need for 'microlens' and 'hspec' in the library

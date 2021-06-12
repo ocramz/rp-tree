@@ -12,7 +12,7 @@ import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, f
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, runIO)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d)
+import Data.RPTree (forest, knn, knnPQ, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d)
 
 spec :: Spec
 spec = do
@@ -45,34 +45,33 @@ spec = do
   describe "Data.RPTree" $ do
     s <- runIO randSeed
     let
-      maxLevs = 10
+      -- maxLevs = 10 -- determined by rpTreeCfg
       n = 10000
       ntrees = 10
       minLeaf = 20
-      nchunk = 50
+      -- nchunk = 50 -- " "
       k = 5
       dim = 2 -- vector dimension
       q = fromListDv [0, 0] -- query
       dats = dataSource n circle2d2  .|
              C.map (\ x -> Embed x ()) -- data
-    tts <- sampleT s $ forest s maxLevs minLeaf ntrees nchunk 1.0 2 dats -- forest
     let
         (RPCfg maxLevs' nchunk' _) = rpTreeCfg minLeaf n dim
-    tts' <- sampleT s $ forest s maxLevs' minLeaf ntrees nchunk' 1.0 2 dats -- forest
+    tts <- sampleT s $ forest s maxLevs' minLeaf ntrees nchunk' 1.0 2 dats -- forest
     it "forest : all data points should appear in every tree" $ do
       all (\t -> treeSize t == n) tts `shouldBe` True
-    it "knn : results should be close to the query (hand picked params)" $ do
+    it "knn : results should be close to the query (rpTreeCfg params)" $ do
       let
         hits = knn metricL2 k tts q
         dists = map fst $ toList hits
       print hits
       maximum dists `shouldSatisfy` (< 1)
-    it "knn : results should be close to the query (rpTreeCfg params)" $ do
-      let
-        hits = knn metricL2 k tts' q
-        dists = map fst $ toList hits
-      print hits
-      maximum dists `shouldSatisfy` (< 1)
+    -- it "knnPQ : results should be close to the query (rpTreeCfg params)" $ do
+    --   let
+    --     hits = knnPQ metricL2 k tts q
+    --     dists = map fst $ toList hits
+    --   print hits
+    --   maximum dists `shouldSatisfy` (< 1)
 
 
 -- test data

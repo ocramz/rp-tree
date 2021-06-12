@@ -1,5 +1,5 @@
 name:                rp-tree
-version:             0.5.1
+version:             0.6
 synopsis:            Random projection trees
 description:         Random projection trees for approximate nearest neighbor search in high-dimensional vector spaces
                      .
@@ -35,8 +35,9 @@ library
                      , conduit >= 1.3.1
                      , containers >= 0.6
                      , deepseq >= 1.4
+                     , heaps
                      , mtl >= 2.2.2
-                     , psqueues
+                     -- , psqueues
                      , serialise >= 0.2
                      , splitmix
                      , splitmix-distributions >= 0.9

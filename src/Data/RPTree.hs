@@ -56,7 +56,7 @@ module Data.RPTree (
   -- , ForestParams
   -- * Query
   , knn
-  -- , knnPQ
+  , knnPQ
   -- * I/O
   , serialiseRPForest
   , deserialiseRPForest
@@ -111,6 +111,7 @@ import Control.Monad.IO.Class (MonadIO(..))
 import Data.Foldable (Foldable(..), maximumBy, minimumBy)
 import Data.Functor.Identity (Identity(..))
 import Data.List (partition, sortBy)
+import Data.Maybe (maybeToList)
 import Data.Monoid (Sum(..))
 import Data.Ord (comparing)
 import Data.Semigroup (Min(..))
@@ -123,14 +124,16 @@ import qualified Data.Map as M (Map, fromList, toList, foldrWithKey, insert, ins
 import qualified Data.Set as S (Set, fromList, intersection, insert)
 -- deepseq
 import Control.DeepSeq (NFData(..))
--- psqueues
-import qualified Data.IntPSQ as PQ (IntPSQ, findMin, minView, empty, insert, fromList, toList)
+-- heaps
+import qualified Data.Heap as H (Heap, fromList, insert, Entry(..), empty, group, viewMin, map)
+-- -- psqueues
+-- import qualified Data.IntPSQ as PQ (IntPSQ, findMin, minView, empty, insert, fromList, toList)
 -- transformers
 import Control.Monad.Trans.State (StateT(..), runStateT, evalStateT, State, runState, evalState, get, put)
 import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector as V (Vector, replicateM, fromList)
-import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!), map, freeze, thaw, take, drop, unzip)
+import qualified Data.Vector.Generic as VG (Vector(..), unfoldrM, length, replicateM, (!), map, freeze, thaw, take, drop, unzip, foldl, fromList)
 import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
@@ -162,21 +165,48 @@ knn distf k tts q = VG.take k $ sortByVG fst cs
   where
     cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ fold $ (`candidates` q) <$> tts
 
--- | Same as 'knn' but accumulating the result in low margin order (following the intuition in 'annoy').
+-- | Same as 'knn' but based on 'H.Heap'
 --
--- FIXME to be verified
-knnPQ :: (Ord p, Inner SVector v, VU.Unbox d, RealFrac d) =>
+-- FIXME uses 'nub' internally so might be slow
+knnPQ :: (Ord p, Inner SVector v, VU.Unbox d, Real d) =>
          (u d -> v d -> p) -- ^ distance function
       -> Int -- ^ k neighbors
       -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
       -> v d -- ^ query point
-      -> V.Vector (p, Embed u d x)
-knnPQ distf k tts q = sortByVG fst cs
+      -> V.Vector (p, Embed u d x) -- ^ ordered in increasing distance order to the query point
+knnPQ distf k tts q = VG.fromList $ take k $ map (\(H.Entry p x) -> (p , x)) $ nub h
   where
-    cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ fold cstt
-    cstt = (takeFromPQ nsing) . (`candidatesPQ` q) <$> tts
-    nsing = (k `div` n) `max` 1
-    n = length tts
+    xs = fold $ (`candidates` q) <$> tts
+    h = VG.foldl insf H.empty xs
+    insf acc x = H.insert (H.Entry p x) acc
+      where
+        p = eEmbed x `distf` q
+
+-- | deduplicate
+nub :: (Ord a) => H.Heap a -> [a]
+nub = foldMap maybeToList . H.map view . H.group
+  where
+    view h = fst <$> H.viewMin h
+
+type PQueue p a = H.Heap (H.Entry p a)
+
+-- -- | Same as 'knn' but accumulating the result in low margin order (following the intuition in 'annoy').
+-- --
+-- -- FIXME to be verified
+-- knnPQ :: (Ord p, Inner SVector v, VU.Unbox d, RealFrac d) =>
+--          (u d -> v d -> p) -- ^ distance function
+--       -> Int -- ^ k neighbors
+--       -> RPForest d (V.Vector (Embed u d x)) -- ^ random projection forest
+--       -> v d -- ^ query point
+--       -> V.Vector (p, Embed u d x)
+-- knnPQ distf k tts q = sortByVG fst cs
+--   where
+--     cs = VG.map (\xe -> (eEmbed xe `distf` q, xe)) $ fold cstt
+--     cstt = (takeFromPQ nsing) . (`candidatesPQ` q) <$> tts
+--     nsing = (k `div` n) `max` 1
+--     n = length tts
+
+
 
 
 -- | Average recall-at-k, computed over a set of trees
@@ -246,63 +276,66 @@ candidates (RPTree rvs tt) x = go 0 tt
            | otherwise   -> go i' rtree
 
 
--- | like 'candidates' but outputs an ordered 'IntPQ' where the margin to the median projection is interpreted as queue priority
-candidatesPQ :: (Fractional d, Ord d, Inner SVector v, VU.Unbox d) =>
-               RPTree d l xs
-            -> v d -- ^ query point
-            -> PQ.IntPSQ d xs
-candidatesPQ (RPTree rvs tt) x = evalS $ go 0 tt PQ.empty (1/0)
-  where
-    go _ (Tip _ xs) acc dprev =
-      insPQ dprev xs acc
-    go ixLev (Bin _ thr margin ltree rtree) acc dprev = do
-      let
-        (mglo, mghi) = getMargin margin
-        r = rvs VG.! ixLev
-        proj = r `inner` x
-        i' = succ ixLev
-        dl = abs (mglo - proj) -- left margin
-        dr = abs (mghi - proj) -- right margin
-      if | proj < thr &&
-           dl > dr -> do
-             ll <- go i' ltree acc (min dprev dl)
-             lr <- go i' rtree acc (min dprev dr)
-             pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
-         | proj < thr  -> go i' ltree acc (min dprev dl)
-         | proj > thr &&
-           dl < dr -> do
-             ll <- go i' ltree acc (min dprev dl)
-             lr <- go i' rtree acc (min dprev dr)
-             pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
-         | otherwise -> go i' rtree acc (min dprev dr)
 
-takeFromPQ :: (Ord p, Foldable t, Monoid (t a)) =>
-              Int -- ^ number of elements to keep
-           -> PQ.IntPSQ p (t a)
-           -> t a
-takeFromPQ n pq = foldMap snd $ reverse $ go [] 0 pq
-  where
-    go acc nacc q = case PQ.minView q of
-      Nothing -> acc
-      Just (_, p, xs, pqRest) ->
-        let
-          nxs = length xs
-          nacc' = nacc + nxs
-        in if nacc' < n
-           then go ((p, xs) : acc) nacc' pqRest
-           else acc
 
-type S = State Int
-evalS :: S a -> a
-evalS = flip evalState 0
 
-insPQ :: (Ord p) => p -> v -> PQ.IntPSQ p v -> S (PQ.IntPSQ p v)
-insPQ p x pq = do
-  i <- get
-  let
-    pq' = PQ.insert i p x pq
-  put (succ i)
-  pure pq'
+-- -- | like 'candidates' but outputs an ordered 'IntPQ' where the margin to the median projection is interpreted as queue priority
+-- candidatesPQ :: (Fractional d, Ord d, Inner SVector v, VU.Unbox d) =>
+--                RPTree d l xs
+--             -> v d -- ^ query point
+--             -> PQ.IntPSQ d xs
+-- candidatesPQ (RPTree rvs tt) x = evalS $ go 0 tt PQ.empty (1/0)
+--   where
+--     go _ (Tip _ xs) acc dprev =
+--       insPQ dprev xs acc
+--     go ixLev (Bin _ thr margin ltree rtree) acc dprev = do
+--       let
+--         (mglo, mghi) = getMargin margin
+--         r = rvs VG.! ixLev
+--         proj = r `inner` x
+--         i' = succ ixLev
+--         dl = abs (mglo - proj) -- left margin
+--         dr = abs (mghi - proj) -- right margin
+--       if | proj < thr &&
+--            dl > dr -> do
+--              ll <- go i' ltree acc (min dprev dl)
+--              lr <- go i' rtree acc (min dprev dr)
+--              pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
+--          | proj < thr  -> go i' ltree acc (min dprev dl)
+--          | proj > thr &&
+--            dl < dr -> do
+--              ll <- go i' ltree acc (min dprev dl)
+--              lr <- go i' rtree acc (min dprev dr)
+--              pure $ PQ.fromList (PQ.toList ll <> PQ.toList lr)
+--          | otherwise -> go i' rtree acc (min dprev dr)
+
+-- takeFromPQ :: (Ord p, Foldable t, Monoid (t a)) =>
+--               Int -- ^ number of elements to keep
+--            -> PQ.IntPSQ p (t a)
+--            -> t a
+-- takeFromPQ n pq = foldMap snd $ reverse $ go [] 0 pq
+--   where
+--     go acc nacc q = case PQ.minView q of
+--       Nothing -> acc
+--       Just (_, p, xs, pqRest) ->
+--         let
+--           nxs = length xs
+--           nacc' = nacc + nxs
+--         in if nacc' < n
+--            then go ((p, xs) : acc) nacc' pqRest
+--            else acc
+
+-- type S = State Int
+-- evalS :: S a -> a
+-- evalS = flip evalState 0
+
+-- insPQ :: (Ord p) => p -> v -> PQ.IntPSQ p v -> S (PQ.IntPSQ p v)
+-- insPQ p x pq = do
+--   i <- get
+--   let
+--     pq' = PQ.insert i p x pq
+--   put (succ i)
+--   pure pq'
 
 
 
