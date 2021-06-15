@@ -28,19 +28,19 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 -- vector
 import qualified Data.Vector as V (Vector, toList, fromList, replicate, zip, zipWith)
 import qualified Data.Vector.Unboxed as VU (Unbox)
-
-import Control.Monad (replicateM)
 import Data.RPTree (knn, knnH, candidates, rpTreeCfg, RPTreeConfig(..), Embed(..), Inner(..), RPTree, RPForest, SVector, fromListSv, DVector, fromListDv, dense, writeCsv, knnWriteCsv, tree, forest, dataSource, sparse, normal2, normalSparse2, datS, datD, circle2d, leaves, levels, treeSize, leafSizes, writeDot)
 -- import Data.RPTree.Internal.Testing (datS, datD)
 
 main :: IO ()
 main = do
   let
-    n = 30000
+    n = 10000
     minl = 10
     dim = 2
     -- cfg = rpTreeCfg n dim
-    (RPCfg maxd chunk _) = rpTreeCfg minl n dim
+    -- (RPCfg maxd chunk _) = rpTreeCfg minl n dim
+    maxd = 5
+    chunk = 100
     tt = tree0 n maxd minl chunk
   csvTree0 tt
   tree0dot tt
@@ -51,10 +51,10 @@ csvKnnTree0 :: (Show a1, VU.Unbox a1, RealFloat a1) =>
 csvKnnTree0 tt = do
   let
     ttlab = prep 0 tt -- label leaves starting from 0
-    q = fromListDv [0, 1] -- query
+    q = fromListDv [1, 1] -- query
     tts = IM.singleton 0 tt
     k = 10
-    labf v = (v, (- 1)) -- labelling function for KNN points
+    labf v = (v, -1) -- labelling function for KNN points
     hits = labf <$> knnL2 k tts q
     hitsH = labf <$> knnHL2 k tts q
   knnWriteCsv "r/scatter_knn.csv" ttlab hits
@@ -70,13 +70,12 @@ knnHL2 n ff q = eEmbed . snd <$> knnH metricL2 n ff q
 
 -- render the tree with graphviz
 tree0dot :: (Ord (t a), Foldable t) => RPTree d x (t a) -> IO ()
-tree0dot tt  =
-  writeDot f fpath "tree0" tt
+tree0dot = writeDot f fpath "tree0"
   where
     f = show . length
     fpath = "tree0.dot"
 
--- scatter the whole dataset with distinct colors for the contents of each leaf
+-- scatter the whole dataset with distinct colors for the contents of each leaf, render as a CSV
 csvTree0 :: (VU.Unbox a1, Show a1, Traversable t) =>
             t (V.Vector (Embed DVector a1 a2)) -> IO ()
 csvTree0 tt = do
@@ -183,7 +182,7 @@ circle2d2 = do
 -- liftC = C.transPipe lift
 
 embedC :: Monad m => C.ConduitT (v e) (Embed v e ()) m ()
-embedC = C.map (\ x -> Embed x ())
+embedC = C.map (`Embed` ())
 
 
 

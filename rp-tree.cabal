@@ -29,6 +29,7 @@ library
                        Data.RPTree.Draw
                        Data.RPTree.Conduit
                        Data.RPTree.Internal.Testing
+                       Data.RPTree.Internal.MedianHeap
   build-depends:       base >= 4.7 && < 5
                      , boxes
                      , bytestring

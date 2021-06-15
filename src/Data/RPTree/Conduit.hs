@@ -41,7 +41,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (sparse, dense)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..), Embed(..))
-
+import qualified Data.RPTree.Internal.MedianHeap as MH (MedianHeap, insert, median)
 
 liftC :: (Monad m, MonadTrans t) => C.ConduitT i o m r -> C.ConduitT i o (t m) r
 liftC = C.transPipe lift
