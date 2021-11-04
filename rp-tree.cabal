@@ -25,6 +25,7 @@ library
   exposed-modules:     Data.RPTree
                        
   other-modules:       Data.RPTree.Internal
+                       Data.RPTree.Batch
                        Data.RPTree.Gen
                        Data.RPTree.Draw
                        Data.RPTree.Conduit

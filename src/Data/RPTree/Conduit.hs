@@ -40,7 +40,7 @@ import qualified Data.Vector.Unboxed as VU (Vector, Unbox, fromList)
 import qualified Data.Vector.Storable as VS (Vector)
 
 import Data.RPTree.Gen (sparse, dense)
-import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..), Embed(..))
+import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), insert, insertMulti, levels, points, Inner(..), innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, DVector(..), fromListDv, partitionAtMedian, RPTError(..), Embed(..))
 import qualified Data.RPTree.Internal.MedianHeap as MH (MedianHeap, insert, median)
 
 liftC :: (Monad m, MonadTrans t) => C.ConduitT i o m r -> C.ConduitT i o (t m) r
@@ -160,60 +160,7 @@ insertMultiC maxd minl n rvss = chunkedAccum n im0 (insertMulti maxd minl rvss)
     z = Tip () mempty
 
 
-{-# SCC insertMulti #-}
-insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
-               Int
-            -> Int
-            -> IM.IntMap (v1 (u d)) -- ^ projection vectors
-            -> IM.IntMap (RPT d () (V.Vector (Embed v d x))) -- ^ accumulator of subtrees
-            -> V.Vector (Embed v d x) -- ^ data chunk
-            -> IM.IntMap (RPT d () (V.Vector (Embed v d x)))
-insertMulti maxd minl rvss tacc xs =
-  flip IM.mapWithKey tacc $ \ !i !t -> case IM.lookup i rvss of
-                                      Just !rvs -> insert maxd minl rvs t xs
-                                      _        -> t
 
-{-# SCC insert #-}
-insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
-          Int -- ^ max tree depth
-       -> Int -- ^ min leaf size
-       -> v1 (u d) -- ^ projection vectors
-       -> RPT d () (V.Vector (Embed v d x)) -- ^ accumulator
-       -> V.Vector (Embed v d x) -- ^ data chunk
-       -> RPT d () (V.Vector (Embed v d x))
-insert maxDepth minLeaf rvs = loop 0
-  where
-    z = Tip () mempty
-    loop ixLev !tt xs =
-      let
-        r = rvs VG.! ixLev -- proj vector for current level
-      in
-        case tt of
-
-          b@(Bin _ thr0 margin0 tl0 tr0) ->
-            if ixLev >= maxDepth
-              then b -- return current subtree
-              else
-              case partitionAtMedian r xs of
-                Nothing -> Tip () mempty
-                Just (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
-                  where
-                    margin' = margin0 <> margin
-                    thr' = (thr0 + thr) / 2
-                    tl = loop (ixLev + 1) tl0 ll
-                    tr = loop (ixLev + 1) tr0 rr
-
-          Tip _ xs0 -> do
-            let xs' = xs <> xs0
-            if ixLev >= maxDepth || length xs' <= minLeaf
-              then Tip () xs' -- concat data in leaf
-              else
-              case partitionAtMedian r xs' of
-                Nothing -> Tip () mempty
-                Just (thr, margin, ll, rr) -> Bin () thr margin tl tr
-                  where
-                    tl = loop (ixLev + 1) z ll
-                    tr = loop (ixLev + 1) z rr
 
 
 

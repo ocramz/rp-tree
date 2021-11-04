@@ -33,7 +33,7 @@ import GHC.Stack (HasCallStack)
 -- bytestring
 import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 -- containers
-import qualified Data.IntMap.Strict as IM (IntMap, fromList)
+import qualified Data.IntMap.Strict as IM (IntMap, fromList, lookup, mapWithKey)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- -- microlens
@@ -206,6 +206,83 @@ levels (RPTree v _) = VG.length v
 -- | Set of data points used to construct the index
 points :: Monoid m => RPTree d l m -> m
 points (RPTree _ t) = fold t
+
+
+
+
+
+
+
+-- | Batch (= non-incremental) creation of a 'RPT'
+create :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
+          Int  -- ^ max tree depth
+       -> Int  -- ^ min leaf size
+       -> v1 (u d) -- ^ projection vectors
+       -> V.Vector (Embed v d x) -- ^ dataset
+       -> RPT d () (V.Vector (Embed v d x))
+create maxDepth minLeaf rvs = insert maxDepth minLeaf rvs z
+  where
+    z = Tip () mempty
+
+
+
+{-# SCC insertMulti #-}
+insertMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
+               Int
+            -> Int
+            -> IM.IntMap (v1 (u d)) -- ^ projection vectors
+            -> IM.IntMap (RPT d () (V.Vector (Embed v d x))) -- ^ accumulator of subtrees
+            -> V.Vector (Embed v d x) -- ^ data chunk
+            -> IM.IntMap (RPT d () (V.Vector (Embed v d x)))
+insertMulti maxd minl rvss tacc xs =
+  flip IM.mapWithKey tacc $ \ !i !t -> case IM.lookup i rvss of
+                                      Just !rvs -> insert maxd minl rvs t xs
+                                      _        -> t
+
+{-# SCC insert #-}
+insert :: (VG.Vector v1 (u d), Ord d, Inner u v, VU.Unbox d, Fractional d) =>
+          Int -- ^ max tree depth
+       -> Int -- ^ min leaf size
+       -> v1 (u d) -- ^ projection vectors
+       -> RPT d () (V.Vector (Embed v d x)) -- ^ accumulator
+       -> V.Vector (Embed v d x) -- ^ data chunk
+       -> RPT d () (V.Vector (Embed v d x))
+insert maxDepth minLeaf rvs = loop 0
+  where
+    z = Tip () mempty
+    loop ixLev !tt xs =
+      let
+        r = rvs VG.! ixLev -- proj vector for current level
+      in
+        case tt of
+
+          b@(Bin _ thr0 margin0 tl0 tr0) ->
+            if ixLev >= maxDepth
+              then b -- return current subtree
+              else
+              case partitionAtMedian r xs of
+                Nothing -> Tip () mempty
+                Just (thr, margin, ll, rr) -> Bin () thr' margin' tl tr
+                  where
+                    margin' = margin0 <> margin
+                    thr' = (thr0 + thr) / 2
+                    tl = loop (ixLev + 1) tl0 ll
+                    tr = loop (ixLev + 1) tr0 rr
+
+          Tip _ xs0 -> do
+            let xs' = xs <> xs0
+            if ixLev >= maxDepth || length xs' <= minLeaf
+              then Tip () xs' -- concat data in leaf
+              else
+              case partitionAtMedian r xs' of
+                Nothing -> Tip () mempty
+                Just (thr, margin, ll, rr) -> Bin () thr margin tl tr
+                  where
+                    tl = loop (ixLev + 1) z ll
+                    tr = loop (ixLev + 1) z rr
+
+
+
 
 
 -- | Scale a vector
