@@ -1,3 +1,7 @@
+0.7
+
+- add batch index creation 'treeBatch', 'forestBatch', 'dataBatch' and corresponding unit tests (#5)
+
 0.6
 
 - add 'knnPQ' based on 'heaps', to be confirmed how efficient it is

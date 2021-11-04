@@ -10,9 +10,11 @@ import Data.Conduit ((.|))
 import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, foldl)
 -- hspec
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, runIO)
+-- vector
+import qualified Data.Vector as V (Vector, map)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, knnH, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d )
+import Data.RPTree (forest, knn, knnH, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d, treeBatch, forestBatch, dataBatch )
 
 spec :: Spec
 spec = do
@@ -42,9 +44,10 @@ spec = do
         x = vs0 `inner` v1
       x `shouldBe` 17.3
 
-  describe "Data.RPTree" $ do
-    s <- runIO randSeed
-    let
+
+  s <- runIO randSeed
+
+  let
       -- maxLevs = 10 -- determined by rpTreeCfg
       n = 10000
       ntrees = 10
@@ -53,10 +56,33 @@ spec = do
       k = 5
       dim = 2 -- vector dimension
       q = fromListDv [0, 0] -- query
+
+  describe "Data.RPTree.Batch" $ do
+    let
+      -- dats :: (V.Vector (Embed DVector Double ()))
+      dats = V.map (\x -> Embed x ()) $ sample s (dataBatch n circle2d2)
+      (RPCfg maxLevs' _ _) = rpTreeCfg minLeaf n dim
+      tts = forestBatch s maxLevs' minLeaf ntrees 1.0 2 dats
+    it "forest : all data points should appear in every tree" $ do
+      all (\t -> treeSize t == n) tts `shouldBe` True
+    it "knn : results should be close to the query (rpTreeCfg params)" $ do
+      let
+        hits = knn metricL2 k tts q
+        dists = map fst $ toList hits
+      -- print hits
+      maximum dists `shouldSatisfy` (< 1)
+    it "knnH : results should be close to the query (rpTreeCfg params)" $ do
+      let
+        hits = knnH metricL2 k tts q
+        dists = map fst $ toList hits
+      print hits
+      maximum dists `shouldSatisfy` (< 1)
+
+  describe "Data.RPTree.Conduit" $ do
+    let
       dats = dataSource n circle2d2  .|
              C.map (\ x -> Embed x ()) -- data
-    let
-        (RPCfg maxLevs' nchunk' _) = rpTreeCfg minLeaf n dim
+      (RPCfg maxLevs' nchunk' _) = rpTreeCfg minLeaf n dim
     tts <- sampleT s $ forest s maxLevs' minLeaf ntrees nchunk' 1.0 2 dats -- forest
     it "forest : all data points should appear in every tree" $ do
       all (\t -> treeSize t == n) tts `shouldBe` True

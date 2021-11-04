@@ -1,5 +1,5 @@
+{-# language CPP #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
-
 module Data.RPTree.Internal.MedianHeap (
   MedianHeap,
   insert, fromList,
@@ -17,7 +17,7 @@ data MedianHeap p a = MedianHeap (MaxHeap p a) (MinHeap p a) deriving (Eq, Show)
 instance Semigroup (MedianHeap p a) where
   MedianHeap l1 r1 <> MedianHeap l2 r2 = MedianHeap (l1 <> l2) (r1 <> r2)
 instance Monoid (MedianHeap p a) where
-  mempty = MedianHeap mempty mempty 
+  mempty = MedianHeap mempty mempty
 insertMax :: Ord p => p -> a -> MaxHeap p a -> MaxHeap p a
 insertMax p x = H.insert (H.Entry (Down p) x)
 insertMin :: Ord p => p -> a -> MinHeap p a -> MinHeap p a
@@ -67,8 +67,11 @@ median (MedianHeap lesser greater)
 getHD :: H.Entry (Down b) c -> H.Entry b c
 getHD = first getDown
 
+#if MIN_VERSION_base(4,14,0)
+#else
 getDown :: Down a -> a
 getDown (Down x) = x
+#endif
 
 viewHead :: H.Heap b -> Maybe b
 viewHead h = fst <$> H.viewMin h
