@@ -11,10 +11,10 @@ import qualified Data.Conduit.Combinators as C (map, mapM, last, scanl, print, f
 -- hspec
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, runIO)
 -- vector
-import qualified Data.Vector as V (Vector, map)
+import qualified Data.Vector as V (Vector, map, head)
 
 import System.Random.SplitMix.Distributions (Gen, sample, GenT, sampleT, normal, stdNormal, stdUniform, exponential, bernoulli, uniformR)
-import Data.RPTree (forest, knn, knnH, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d, treeBatch, forestBatch, dataBatch )
+import Data.RPTree (forest, knn, knnH, knnPQ, sparse, dense,  RPTree, rpTreeCfg, RPTreeConfig(..), candidates, levels, treeSize, points, Inner(..), SVector, fromListSv, DVector, fromListDv, dataSource, Embed(..), randSeed, circle2d, treeBatch, forestBatch, dataBatch )
 
 spec :: Spec
 spec = do
@@ -59,9 +59,9 @@ spec = do
 
   describe "Data.RPTree.Batch" $ do
     let
-      -- dats :: (V.Vector (Embed DVector Double ()))
       dats = V.map (\x -> Embed x ()) $ sample s (dataBatch n circle2d2)
       (RPCfg maxLevs' _ _) = rpTreeCfg minLeaf n dim
+      -- tree is constructed with maxLevs' levels
       tts = forestBatch s maxLevs' minLeaf ntrees 1.0 2 dats
     it "forest : all data points should appear in every tree" $ do
       all (\t -> treeSize t == n) tts `shouldBe` True
@@ -69,13 +69,19 @@ spec = do
       let
         hits = knn metricL2 k tts q
         dists = map fst $ toList hits
-      -- print hits
+      print $ V.head hits
+      maximum dists `shouldSatisfy` (< 1)
+    it "knnPQ : results should be close to the query (rpTreeCfg params)" $ do
+      let
+        hits = knnPQ metricL2 k tts q
+        dists = map fst $ toList hits
+      print $ V.head hits
       maximum dists `shouldSatisfy` (< 1)
     it "knnH : results should be close to the query (rpTreeCfg params)" $ do
       let
         hits = knnH metricL2 k tts q
         dists = map fst $ toList hits
-      print hits
+      print $ V.head hits
       maximum dists `shouldSatisfy` (< 1)
 
   describe "Data.RPTree.Conduit" $ do
@@ -90,13 +96,13 @@ spec = do
       let
         hits = knn metricL2 k tts q
         dists = map fst $ toList hits
-      print hits
+      print $ V.head hits
       maximum dists `shouldSatisfy` (< 1)
     it "knnH : results should be close to the query (rpTreeCfg params)" $ do
       let
         hits = knnH metricL2 k tts q
         dists = map fst $ toList hits
-      print hits
+      print $ V.head hits
       maximum dists `shouldSatisfy` (< 1)
 
 

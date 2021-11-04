@@ -58,9 +58,10 @@ module Data.RPTree (
   -- ** Parameters
   , rpTreeCfg, RPTreeConfig(..)
   -- , ForestParams
-  -- * Query
+  -- * k-nearest neighbors queries
   , knn
   , knnH
+  , knnPQ
   -- * I/O
   , serialiseRPForest
   , deserialiseRPForest
