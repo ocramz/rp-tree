@@ -49,7 +49,11 @@ Retrieval accuracy can be improved by populating multiple trees (i.e. a /random 
 -}
 module Data.RPTree (
   -- * Construction
-  tree
+  -- ** Batch
+  treeBatch
+  , forestBatch
+  -- ** Incremental (Conduit-based)
+  , tree
   , forest
   -- ** Parameters
   , rpTreeCfg, RPTreeConfig(..)
@@ -97,6 +101,8 @@ module Data.RPTree (
   , liftC
   -- ** Random generation
   , randSeed
+  -- *** Batch
+  , dataBatch
   -- *** Conduit
   , dataSource
   , datS, datD
@@ -139,6 +145,7 @@ import qualified Data.Vector.Storable as VS (Vector)
 -- vector-algorithms
 import qualified Data.Vector.Algorithms.Merge as V (sortBy)
 
+import Data.RPTree.Batch (treeBatch, forestBatch, dataBatch)
 import Data.RPTree.Conduit (tree, forest, dataSource, liftC, rpTreeCfg, RPTreeConfig(..))
 import Data.RPTree.Gen (sparse, dense, normal2, normalSparse2, circle2d)
 import Data.RPTree.Internal (RPTree(..), RPForest, RPT(..), Embed(..), leaves, levels, points, Inner(..), Scale(..), scaleS, scaleD, (/.), innerDD, innerSD, innerSS, metricSSL2, metricSDL2, SVector(..), fromListSv, fromVectorSv, DVector(..), fromListDv, fromVectorDv, partitionAtMedian, Margin, getMargin, sortByVG, serialiseRPForest, deserialiseRPForest)

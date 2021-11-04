@@ -64,6 +64,7 @@ test-suite spec
                      , hspec
                      , QuickCheck
                      , splitmix-distributions
+                     , vector
 
 benchmark bench-time
   default-language:    Haskell2010

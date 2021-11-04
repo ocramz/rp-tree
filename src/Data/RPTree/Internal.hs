@@ -33,7 +33,7 @@ import GHC.Stack (HasCallStack)
 -- bytestring
 import qualified Data.ByteString.Lazy as LBS (ByteString, toStrict, fromStrict)
 -- containers
-import qualified Data.IntMap.Strict as IM (IntMap, fromList, lookup, mapWithKey)
+import qualified Data.IntMap.Strict as IM (IntMap, fromList, map, lookup, mapWithKey)
 -- deepseq
 import Control.DeepSeq (NFData(..))
 -- -- microlens
@@ -222,6 +222,21 @@ create :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
        -> RPT d () (V.Vector (Embed v d x))
 create maxDepth minLeaf rvs = insert maxDepth minLeaf rvs z
   where
+    z = Tip () mempty
+
+-- | Batch (= non-incremental) creation of multiple 'RPT's
+createMulti :: (Ord d, Inner u v, VU.Unbox d, Fractional d, VG.Vector v1 (u d)) =>
+               Int
+            -> Int
+            -> IM.IntMap (v1 (u d)) -- ^ projection vectors
+            -> V.Vector (Embed v d x) -- ^ dataset
+            -> IM.IntMap (RPT d () (V.Vector (Embed v d x)))
+createMulti maxd minl rvss xs =
+  flip IM.mapWithKey im0 $ \i t -> case IM.lookup i rvss of
+                                     Just rvs -> create maxd minl rvs xs
+                                     _ -> t
+  where
+    im0 = IM.map (const z) rvss
     z = Tip () mempty
 
 
