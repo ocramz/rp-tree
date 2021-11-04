@@ -1,5 +1,5 @@
+{-# language CPP #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
-
 module Data.RPTree.Internal.MedianHeap (
   MedianHeap,
   insert, fromList,
@@ -67,8 +67,11 @@ median (MedianHeap lesser greater)
 getHD :: H.Entry (Down b) c -> H.Entry b c
 getHD = first getDown
 
+#if MIN_VERSION_base(4,14,0)
+#else
 getDown :: Down a -> a
 getDown (Down x) = x
+#endif
 
 viewHead :: H.Heap b -> Maybe b
 viewHead h = fst <$> H.viewMin h

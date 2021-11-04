@@ -61,7 +61,7 @@ spec = do
     let
       -- dats :: (V.Vector (Embed DVector Double ()))
       dats = V.map (\x -> Embed x ()) $ sample s (dataBatch n circle2d2)
-      (RPCfg maxLevs' nchunk' _) = rpTreeCfg minLeaf n dim
+      (RPCfg maxLevs' _ _) = rpTreeCfg minLeaf n dim
       tts = forestBatch s maxLevs' minLeaf ntrees 1.0 2 dats
     it "forest : all data points should appear in every tree" $ do
       all (\t -> treeSize t == n) tts `shouldBe` True
